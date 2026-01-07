@@ -17,7 +17,19 @@ class ControlBase(metaclass=ABCMeta):
 		デストラクタ
 		"""
 		pass
-	
+
+	@abstractmethod
+	def begin(self):
+		pass
+
+	@abstractmethod
+	def commit(self):
+		pass
+
+	@abstractmethod
+	def rollback(self):
+		pass
+
 	@abstractmethod
 	def create_table(self, tbl_id):
 		pass

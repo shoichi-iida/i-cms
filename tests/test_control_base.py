@@ -10,14 +10,17 @@ from functions.data.control_base import ControlBase
 
 # テスト用の実装クラス
 class MockControl(ControlBase):
-    def create_table(self, tbl_id): pass
-    def drop_table(self, tbl_id): pass
-    def select(self, tbl_id, dict_select={}, lst_exclude=[], fixed_where=[]): pass
-    def distinct(self, tbl_id, lst_select=[], dict_select={}): pass
-    def insert(self, tbl_id, lst_insert, is_upsert=False): pass
-    def update(self, tbl_id, dict_update, dict_where={}): pass
-    def delete(self, tbl_id, lst_delete=[]): pass
-    def escape(self, col_type, val):return super().escape(col_type, val)
+	def begin(self): pass
+	def commit(self): pass
+	def rollback(self): pass
+	def create_table(self, tbl_id): pass
+	def drop_table(self, tbl_id): pass
+	def select(self, tbl_id, dict_select={}, lst_exclude=[], fixed_where=[]): pass
+	def distinct(self, tbl_id, lst_select=[], dict_select={}): pass
+	def insert(self, tbl_id, lst_insert, is_upsert=False): pass
+	def update(self, tbl_id, dict_update, dict_where={}): pass
+	def delete(self, tbl_id, lst_delete=[]): pass
+	def escape(self, col_type, val):return super().escape(col_type, val)
 
 class TestControlBase(TestCase):
 	def setUp(self):

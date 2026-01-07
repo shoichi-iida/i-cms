@@ -29,7 +29,28 @@ class ControlTinyDB(ControlBase):
 		"""
 		super().__del__()
 		self.db.close()
-	
+
+	def begin(self):
+		"""
+		トランザクション開始処理
+		TinyDBにトランザクション機能は存在しないが、I/F互換性のために定義。
+		"""
+		pass
+
+	def commit(self):
+		"""
+		トランザクションコミット処理
+		TinyDBにトランザクション機能は存在しないが、I/F互換性のために定義。
+		"""
+		pass
+
+	def rollback(self):
+		"""
+		トランザクションロールバック処理
+		TinyDBにトランザクション機能は存在しないが、I/F互換性のために定義。
+		"""
+		pass
+
 	def create_table(self, tbl_id):
 		"""
 		テーブル作成処理
