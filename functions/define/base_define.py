@@ -108,6 +108,18 @@ class BaseDefine:
 			doc = ET.ElementTree(root)
 			doc.write(path, "utf-8", True)
 
+	def save_json(self, path):
+		"""
+		外部定義書込処理(JSON)
+
+		Parameters
+		----------
+		path : string
+			外部定義書込パス
+		"""
+		with open(path, mode="wt", encoding="utf-8") as f:
+			json.dump(list(self.dict.values()), f, ensure_ascii=False, indent="\t")
+
 	def __save_child(self, root, data):
 		for key in data.keys():
 			obj = data[key]
