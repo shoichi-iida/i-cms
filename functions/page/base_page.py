@@ -87,7 +87,7 @@ class BasePage():
 		if handler.prm_cmn.get("define_page") is not None:
 			self.append_obj(handler.prm_cmn["define_page"].get("obj", []), lst_obj)
 			t = template.Template("\r\n".join(lst_obj))
-			handler.prm_cmn["generate_page"] = t.generate(prm_cmn=handler.prm_cmn, prm_req=handler.prm_req)
+			handler.prm_cmn["generate_page"] = t.generate(prm_cmn=handler.prm_cmn, prm_req=handler.prm_req, ctrl_define=handler.ctrl_define)
 		base_dir = ""
 		if self.page_dir is not None:
 			base_dir = "{0}/".format(self.page_dir)
