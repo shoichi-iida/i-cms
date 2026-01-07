@@ -59,6 +59,8 @@ class ControlSqlite(ControlBase):
 		return self.db.cursor()
 
 	def exec_sql(self, sql, param=()):
+		if sql is None:
+			return []
 		cursor = self.get_cursor()
 		cursor.execute(sql, param)
 		return cursor.fetchall()
@@ -72,7 +74,7 @@ class ControlSqlite(ControlBase):
 		tbl_id : string
 			テーブルID
 		"""
-		return self.exec_sql(super().create_table(tbl_id))
+		return self.exec_sql(super().get_create_table_sql(tbl_id))
 
 	def drop_table(self, tbl_id):
 		"""
@@ -83,7 +85,7 @@ class ControlSqlite(ControlBase):
 		tbl_id : string
 			テーブルID
 		"""
-		return self.exec_sql(super().drop_table(tbl_id))
+		return self.exec_sql(super().get_drop_table_sql(tbl_id))
 
 	def select(self, tbl_id, dict_select={}, lst_exclude=[], fixed_where=[]):
 		"""
@@ -101,7 +103,7 @@ class ControlSqlite(ControlBase):
 		fixed_where : list of string default []
 			固定WHERE区配列。
 		"""
-		return self.exec_sql(super().select(tbl_id, dict_select, lst_exclude, fixed_where))
+		return self.exec_sql(super().get_select_sql(tbl_id, dict_select, lst_exclude, fixed_where))
 
 	def distinct(self, tbl_id, lst_select=[], dict_select={}):
 		"""
@@ -117,9 +119,9 @@ class ControlSqlite(ControlBase):
 			取得対象条件辞書。
 			{ "key1" : "value1", "key2" : "value2"}のようにキー項目と値を設定する。
 		"""
-		return self.exec_sql(super().distinct(tbl_id, lst_select, dict_select))
+		return self.exec_sql(super().get_distinct_sql(tbl_id, lst_select, dict_select))
 
-	def insert(self, tbl_id, lst_insert):
+	def insert(self, tbl_id, lst_insert, is_upsert=False):
 		"""
 		レコード挿入処理
 
@@ -132,7 +134,7 @@ class ControlSqlite(ControlBase):
 			[{ "key1" : "value1", "key2" : "value2"}]のようにキー項目と値を設定する。
 		"""
 		result = []
-		for sql in super().insert(tbl_id, lst_insert):
+		for sql in super().get_insert_sql(tbl_id, lst_insert, is_upsert):
 			result.extend(self.exec_sql(sql))
 		return result
 
@@ -149,7 +151,7 @@ class ControlSqlite(ControlBase):
 			{ "key1" : "value1", "key2" : "value2"}のようにキー項目と値を設定する。
 		----------
 		"""
-		return self.exec_sql(super().update(tbl_id, dict_update, dict_where))
+		return self.exec_sql(super().get_update_sql(tbl_id, dict_update, dict_where))
 
 	def delete(self, tbl_id, lst_delete=[]):
 		"""
@@ -163,7 +165,7 @@ class ControlSqlite(ControlBase):
 			削除対象条件配列。
 			[{ "key1" : "value1", "key2" : "value2"}]のようにキー項目と値を設定する。
 		"""
-		return self.exec_sql(super().delete(tbl_id, lst_delete))
+		return self.exec_sql(super().get_delete_sql(tbl_id, lst_delete))
 
 	def escape(self, col_type, val):
 		if not col_type in self.text_type:
