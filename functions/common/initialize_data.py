@@ -3,6 +3,7 @@
 import uuid
 import traceback
 from tornado.options import options
+from functions.common.util_encrypt import UtilEncrypt
 
 class InitializeData():
 	"""
@@ -88,7 +89,7 @@ class InitializeData():
 						continue
 					if auth_key == "password":
 						if user[user_id][auth_key] != "":
-							user_data["password"] = user[user_id][auth_key]
+							user_data["password"] = UtilEncrypt.encrypt_xor(user[user_id][auth_key], options.encrypt_key)
 						continue
 					if auth_key == "name":
 						user_data["name"] = user[user_id][auth_key]

@@ -2,6 +2,8 @@
 
 from tornado import escape, template
 from tornado.options import options
+from functions.common.util_encrypt import UtilEncrypt
+
 try:
 	if options.ldap:
 		from functions.common.control_ldap import ControlLdap
@@ -180,7 +182,7 @@ class BasePage():
 	def get_account(self, handler, user_id, input_password):
 		result = handler.ctrl_db["db_control"].select("tbl_account", dict_select={
 			"id": user_id,
-			"password": input_password
+			"password": UtilEncrypt.encrypt_xor(input_password, options.encrypt_key)
 		})
 		if len(result) == 0:
 			return None

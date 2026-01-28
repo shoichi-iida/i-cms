@@ -38,6 +38,7 @@ class LoadOptions():
 		define("ldap_password", default="")
 
 		define("host_name", default="127.0.0.1")
+		define("encrypt_key", default="i-cms")
 
 		define("ssh_tunnel", default=False, type=bool)
 		define("ssh_host", default="127.0.0.1")
