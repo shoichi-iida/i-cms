@@ -88,7 +88,9 @@ def initialize_sockets(path):
 if __name__ == "__main__":
 	# 基準パス設定
 	base_path = os.path.dirname(__file__)
-	
+
+	# 設定定義
+	LoadOptions.define_options()
 	# 設定ファイル読込
 	LoadOptions.load(base_path)
 	

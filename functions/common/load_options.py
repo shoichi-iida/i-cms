@@ -58,9 +58,6 @@ class LoadOptions():
 		base_path : string
 			読込基準パス
 		"""
-		# 設定定義
-		define_options()
-
 		# 設定ファイル読込
 		options.parse_config_file(
 			os.path.join(base_path, 'server.ini')
