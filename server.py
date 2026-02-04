@@ -16,6 +16,7 @@ from functions.common.load_options import LoadOptions
 from functions.common.control_define import ControlDefine
 from functions.handler.main_handler import MainHandler
 from functions.handler.socket_handler import SocketHandler
+from functions.handler.xsrf_token_handler import XsrfTokenHandler
 
 # 終了確認フラグ
 is_closing = False
@@ -114,6 +115,7 @@ if __name__ == "__main__":
 		[
 			(r"/", MainHandler, { "pages": pages[0], "ctrl_define": ctrl_define }),
 			(r"/socket", SocketHandler, { "sockets": sockets[0], "ctrl_define": ctrl_define }),
+			(r"/xsrf-token", XsrfTokenHandler, {}),
 		],
 		cookie_secret=options.cookie_key,
 		template_path=template_path,
