@@ -55,7 +55,7 @@ class Page(BasePage):
 		]
 		self.input_check = re.compile(r'^[a-zA-Z0-9\-_]+$')
 
-	def view(self, handler):
+	def post_view(self, handler):
 		handler.prm_cmn["define_auth"] = handler.ctrl_define["auth"]["def"]
 		page = handler.prm_req.get("page", "common_setting")
 		if page == "common_setting":

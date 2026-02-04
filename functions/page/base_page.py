@@ -83,6 +83,18 @@ class BasePage():
 						val = int(val)
 				dict["B_{0}".format(key[0])] = val
 		return dict
+	
+	def get_view(self, handler):
+		self.view(handler)
+
+	def post_view(self, handler):
+		self.view(handler)
+
+	def put_view(self, handler):
+		self.view(handler)
+
+	def delete_view(self, handler):
+		self.view(handler)
 
 	def view(self, handler):
 		lst_obj = []
@@ -103,7 +115,7 @@ class BasePage():
 			prm_req=handler.prm_req,
 			ctrl_define=handler.ctrl_define
 		)
-
+	
 	def append_obj(self, define, lst_obj):
 		for obj in define:
 			# 開きタグ

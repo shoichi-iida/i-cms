@@ -69,7 +69,6 @@ class BaseHandler(web.RequestHandler):
 		"""
 		リクエスト前処理
 		"""
-
 		# DB制御
 		self.ctrl_db = ControlDB(self.ctrl_define)
 
@@ -89,6 +88,7 @@ class BaseHandler(web.RequestHandler):
 			self.prm_cmn["color_role"][lv] = self.ctrl_define["message_lv"]["def"][lv].get("value", "")
 			self.prm_cmn["message"][lv] = []
 			
+		self.is_error = False
 		try:
 			for param in self.request.query.split("&"):
 				if param == "":
@@ -112,23 +112,50 @@ class BaseHandler(web.RequestHandler):
 
 			for record in self.ctrl_db["db_control"].select("tbl_setting"):
 				self.prm_cmn[record["setting_key"]] = record["setting_value"]
-		finally:
-			# DBクローズ
-			self.ctrl_db.__del__()
-		
+		except Exception as e:
+			self.append_log(self.prm_cmn.get("account_id", "Non Login"), "alert")
+			print(e)
+			self.append_message("CE-9999", [str(e)])
+			for m in str(traceback.format_exc()).splitlines():
+				self.append_message("", [m], "alert")
+			self.is_error = True
+	
+	def on_finish(self):
+		"""
+		リクエスト後処理
+		"""
+		# DBクローズ
+		self.ctrl_db.__del__()
+
 	def get(self):
 		"""
 		GETリクエスト処理
 		"""
-		self.post()
+		self.proc_page("get")
 
 	def post(self):
 		"""
 		POSTリクエスト処理
 		"""
+		self.proc_page("post")
+		
+	def put(self):
+		"""
+		PUTリクエスト処理
+		"""
+		self.proc_page("put")
+
+	def delete(self):
+		"""
+		DELETEリクエスト処理
+		"""
+		self.proc_page("delete")
+	
+	def proc_page(self, mode):
 		try:
-			# DB制御
-			self.ctrl_db = ControlDB(self.ctrl_define)
+			if self.is_error:
+				self.render("base.html", prm_cmn=self.prm_cmn)
+				return
 			operation = self.get_operation()
 			if len(operation) > 0:
 				self.prm_req["page"] = operation[0]["return_operation"]
@@ -145,20 +172,27 @@ class BaseHandler(web.RequestHandler):
 						if not self.admin_page and not page.check_login(self):
 							self.append_message("CE-0003", [key])
 							self.prm_req["page"] = page.back_page
-							self.post()
+							self.proc_page(mode)
 							return
 						self.append_access_hist()
 						if self.admin_page and not page.admin_check_login(self):
 							self.append_message("CE-0004", [key])
 							self.prm_req["page"] = page.back_page
-							self.post()
+							self.proc_page(mode)
 							return
 					if page.need_auth != "" and not self.prm_cmn.get("auth", {}).get(page.need_auth, False):
 						self.append_message("CE-0005", [key])
 						self.prm_req["page"] = page.back_page_auth
-						self.post()
+						self.proc_page(mode)
 						return
-					page.view(self)
+					if mode == "get":
+						page.get_view(self)
+					elif mode == "post":
+						page.post_view(self)
+					elif mode == "put":
+						page.put_view(self)
+					elif mode == "delete":
+						page.delete_view(self)
 					return
 			self.append_message("CE-0006", [key])
 			self.render("common/error.html", prm_cmn=self.prm_cmn, prm_req=self.prm_req)
@@ -173,9 +207,6 @@ class BaseHandler(web.RequestHandler):
 			for m in str(traceback.format_exc()).splitlines():
 				self.append_message("", [m], "alert")
 			self.render("base.html", prm_cmn=self.prm_cmn)
-		finally:
-			# DBクローズ
-			self.ctrl_db.__del__()
 
 	def view_download(self, file_name, file_io):
 		"""
@@ -199,6 +230,19 @@ class BaseHandler(web.RequestHandler):
 			self.write(data)
 		self.finish()
 	
+	def view_json(self, resonse):
+		"""
+		JSON応答処理
+		
+		Parameters
+		----------
+		response : dict
+			応答電文
+		"""
+		self.set_header("Content-Type", "application/json")
+		self.write(json.dumps(resonse))
+		self.finish()
+
 	def add_breadcrumb(self, title, link=None, icon=None, param={}):
 		self.prm_cmn["lst_breadcrumb"].append({
 			"link": link,
@@ -216,7 +260,7 @@ class BaseHandler(web.RequestHandler):
 		key : string
 			cookieのキー値
 		"""
-		value = self.get_secure_cookie(key)
+		value = self.get_signed_cookie(key)
 		if not value: return None
 		return escape.xhtml_unescape(value)
 
@@ -231,7 +275,7 @@ class BaseHandler(web.RequestHandler):
 		value : string
 			cookieの設定値
 		"""
-		self.set_secure_cookie(key, escape.xhtml_escape(value))
+		self.set_signed_cookie(key, escape.xhtml_escape(value))
 	
 	def alert_message(self, msg_cd, msg_prm=[]):
 		"""

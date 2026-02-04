@@ -22,7 +22,7 @@ class Page(BasePage):
 		# templateファイルの格納ディレクトリ
 		self.page_dir = "operation"
 
-	def view(self, handler):
+	def post_view(self, handler):
 		page = handler.prm_req.get("page", "operation_list")
 		if page == "operation_list":
 			self.view_list(handler)

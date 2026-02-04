@@ -34,7 +34,7 @@ class Page(BasePage):
 			self.ldap = ControlLdap()
 			self.ldap.connect(options.ldap_domain, options.ldap_user, options.ldap_password)
 
-	def view(self, handler):
+	def post_view(self, handler):
 		handler.prm_cmn["define_auth"] = handler.ctrl_define["auth"]["def"]
 		page = handler.prm_req.get("page", "user_setting")
 		if page == "user_setting":

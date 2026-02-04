@@ -24,7 +24,7 @@ class Page(BasePage):
 		# templateファイルの格納ディレクトリ
 		self.page_dir = "sample"
 
-	def view(self, handler):
+	def post_view(self, handler):
 		# form.pageの値を取得(値が取れなかった場合sample1とする)
 		page = handler.prm_req.get("page", "sample1")
 		# page分岐

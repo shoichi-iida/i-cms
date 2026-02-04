@@ -8,7 +8,7 @@ class Page(BasePage):
 		self.page_handler.extend(["index", "login", "logout", "account_delete"])
 		self.need_login = False
 
-	def view(self, handler):
+	def post_view(self, handler):
 		# ポータル設定読込
 		self.check_login(handler)
 		lst_menu = []
