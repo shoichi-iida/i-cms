@@ -57,15 +57,18 @@ def initialize_pages(path):
         読込を行うユーザ定義Pageクラスの格納パス
     """
     page_dir = glob(path, recursive=True)
-    pages = []
+    result = {}
     for file_path in page_dir:
         if os.path.basename(file_path) in ["__init__.py", "base_page.py"]:
             continue
-        print_message("Loading : {0}".format(file_path))
+        print_message("Loading : {0}".format(file_path.replace("\\", "/")))
         class_path = os.path.splitext(file_path)[0].replace(os.path.sep, '.').replace("/", ".")
         print_message("Class Path : {0}".format(class_path))
-        pages.append(import_module(class_path).Page())
-    return pages
+        page = import_module(class_path).Page()
+        if not page.handler_url in result.keys():
+            result[page.handler_url] = []
+        result[page.handler_url].append(page)
+    return result
 
 def initialize_sockets(path):
     """
@@ -77,15 +80,18 @@ def initialize_sockets(path):
         読込を行うユーザ定義Socketクラスの格納パス
     """
     page_dir = glob(path, recursive=True)
-    pages = []
+    result = {}
     for file_path in page_dir:
         if os.path.basename(file_path) in ["__init__.py", "base_socket.py"]:
             continue
-        print_message("Loading : {0}".format(file_path))
+        print_message("Loading : {0}".format(file_path.replace("\\", "/")))
         class_path = os.path.splitext(file_path)[0].replace(os.path.sep, '.').replace("/", ".")
         print_message("Class Path : {0}".format(class_path))
-        pages.append(import_module(class_path).Socket())
-    return pages
+        socket = import_module(class_path).Socket()
+        if not socket.handler_url in result.keys():
+            result[socket.handler_url] = []
+        result[socket.handler_url].append(socket)
+    return result
 
 if __name__ == "__main__":
     # 基準パス設定
@@ -105,19 +111,25 @@ if __name__ == "__main__":
         static_path = os.path.join(base_path, static_path)
 
     # 各種表示クラス初期化
-    pages = []
-    pages.append(initialize_pages("functions/page/main/**/*.py"))
-    sockets = []
-    sockets.append(initialize_sockets("functions/socket/**/*.py"))
+    pages = initialize_pages("functions/page/main/**/*.py")
+    sockets = initialize_sockets("functions/socket/**/*.py")
+    if len(pages.keys() & sockets.keys() & {"xsrf-token"}) > 0:
+        print_message("Error : Duplicate URL")
+        sys.exit(1)
     ctrl_define = ControlDefine()
+
+    # URL設定
+    urls = [(r"/xsrf-token", XsrfTokenHandler, {})]
+    for url in pages.keys():
+        print_message("Starting PageHandler : /{0}".format(url))
+        urls.append((r"/{0}".format(url), MainHandler, { "pages": pages[url], "ctrl_define": ctrl_define }))
+    for url in sockets.keys():
+        print_message("Starting SocketHandler : /{0}".format(url))
+        urls.append((r"/{0}".format(url), SocketHandler, { "sockets": sockets[url], "ctrl_define": ctrl_define }))
 
     # アプリケーション設定
     app = web.Application(
-        [
-            (r"/", MainHandler, { "pages": pages[0], "ctrl_define": ctrl_define }),
-            (r"/socket", SocketHandler, { "sockets": sockets[0], "ctrl_define": ctrl_define }),
-            (r"/xsrf-token", XsrfTokenHandler, {}),
-        ],
+        urls,
         cookie_secret=options.cookie_key,
         template_path=template_path,
         static_path=static_path,
@@ -132,8 +144,6 @@ if __name__ == "__main__":
         ui_modules=module_ui,
         autoreload=not options.multi_thread
     )
-    # バーチャルホスト
-    # app.add_handlers("sub.example.com", [(r'/', SubHandler)])
 
     # サーバー設定
     port = options.port
