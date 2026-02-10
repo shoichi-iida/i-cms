@@ -19,7 +19,7 @@ class Page(BasePage):
 				continue
 			if page.portal_menu.menu_admin and not handler.prm_cmn.get("admin", False):
 				continue
-				lst_menu.append(page.portal_menu)
+			lst_menu.append(page.portal_menu)
 		lst_menu = sorted(lst_menu, key=lambda x: x.menu_order)
 		handler.prm_cmn["define_menu"] = lst_menu
 		page = handler.prm_req.get("page", "index")
