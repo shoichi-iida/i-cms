@@ -3,9 +3,6 @@
 
 import os
 import sys
-
-from functions.handler.redirect_handler import RedirectToHttpsHandler
-
 sys.path.append(os.path.dirname(__file__))
 import signal
 from glob import glob
@@ -17,6 +14,7 @@ from tornado.options import options
 from functions.common import module_ui
 from functions.common.load_options import LoadOptions
 from functions.common.control_define import ControlDefine
+from functions.handler.redirect_handler import RedirectToHttpsHandler
 from functions.handler.main_handler import MainHandler
 from functions.handler.socket_handler import SocketHandler
 from functions.handler.xsrf_token_handler import XsrfTokenHandler
@@ -143,7 +141,9 @@ if __name__ == "__main__":
     if not options.ssl:
         server = httpserver.HTTPServer(app)
     else:
-        http_server = httpserver.HTTPServer(RedirectToHttpsHandler())
+        http_server = httpserver.HTTPServer(web.Application([
+            (r"/.*", RedirectToHttpsHandler),
+        ]))
         http_server.listen(port)
         port = options.ssl_port
         # SSL設定
