@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <data>
-	<!--<database id="db_control" db_type="tinydb" db_path="db/control.dat" inmemory="0" />--><!-- TinyDB -->
-	<database id="db_control" db_type="mysql" db_host="127.0.0.1" db_user="root" db_password="" db_name="i_cms" db_charset="utf8mb4" /><!-- MariaDB -->
+	<database id="db_control" db_type="tinydb" db_path="db/control.dat" inmemory="0" /><!-- TinyDB -->
+	<!--<database id="db_control" db_type="mysql" db_host="127.0.0.1" db_user="root" db_password="" db_name="i_cms" db_charset="utf8mb4" />--><!-- MariaDB -->
 	<!--<database id="db_mysql" db_type="mysql" db_host="127.0.0.1" db_user="root" db_password="Passw0rd" db_name="sasdb" db_charset="utf8mb4" />--><!-- MySQLDB -->
 </data>
