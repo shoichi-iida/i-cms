@@ -46,8 +46,8 @@ class LoadOptions():
 		define("ssh_user", default="")
 		define("ssh_password", default="")
 		define("bind_address", default="127.0.0.1")
-		define("remote_bind_port", default=22, type=int)
-		define("local_bind_port", default=22, type=int)
+		define("remote_bind_port", default=[22], type=int, multiple=True)
+		define("local_bind_port", default=[22], type=int, multiple=True)
 		
 	@staticmethod
 	def load(base_path):
