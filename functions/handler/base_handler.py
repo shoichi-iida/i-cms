@@ -601,10 +601,10 @@ class BaseHandler(web.RequestHandler):
     def get_auth_list(self):
         result = {}
         for record in self.ctrl_db["db_control"].select("mst_auth"):
-            result[record["function"]] = {
-                "id": record["function"],
+            result[record["id"]] = {
+                "id": record["id"],
                 "name": record["name"],
-                "ref_name": record["name"]
+                "ref_name": record["function"]
             }
         return result
 
@@ -666,7 +666,7 @@ class BaseHandler(web.RequestHandler):
         for record in self.ctrl_db["db_control"].select("tbl_auth", dict_select={
             "id": user_id
         }):
-            result[record["function"]] = record["auth_value"]
+            result[record["auth_id"]] = record["auth_value"]
         lst_affiliation = []
         for r in self.ctrl_db["db_control"].select("tbl_group_affiliation", dict_select={
             "account_id": user_id
@@ -677,7 +677,7 @@ class BaseHandler(web.RequestHandler):
                 "id": group_id
             }):
                 if record["auth_value"]:
-                    result[record["function"]] = record["auth_value"]
+                    result[record["auth_id"]] = record["auth_value"]
         return result
 
     def get_account_settings(self, user_id):

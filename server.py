@@ -123,14 +123,26 @@ def initialize_sockets(path):
         result[socket.handler_url].append(socket)
     return result
 
-if __name__ == "__main__":
-    # 基準パス設定
-    base_path = os.path.dirname(__file__)
+def make_app(base_path=None):
+    """
+    Tornado Applicationの構築処理
 
-    # 設定定義
-    LoadOptions.define_options()
-    # 設定ファイル読込
-    LoadOptions.load(base_path)
+    server.py本体（__main__）と結合テスト（tests_integration）の双方から
+    同一構成のApplicationを生成するための共通処理。
+    事前にLoadOptionsで設定が読み込まれていること。
+
+    Parameters
+    ----------
+    base_path : string, default None
+        基準パス。未指定の場合は本ファイルの格納ディレクトリ。
+
+    Returns
+    -------
+    tornado.web.Application
+        構築済みApplication
+    """
+    if base_path is None:
+        base_path = os.path.dirname(__file__)
 
     # パス設定
     template_path = options.template_path
@@ -162,7 +174,7 @@ if __name__ == "__main__":
         urls.append((r"{0}".format(url), SocketHandler, { "sockets": sockets[url], "ctrl_define": ctrl_define }))
 
     # アプリケーション設定
-    app = web.Application(
+    return web.Application(
         urls,
         cookie_secret=options.cookie_key,
         template_path=template_path,
@@ -178,6 +190,18 @@ if __name__ == "__main__":
         ui_modules=module_ui,
         autoreload=options.debug_mode and not options.multi_thread
     )
+
+if __name__ == "__main__":
+    # 基準パス設定
+    base_path = os.path.dirname(__file__)
+
+    # 設定定義
+    LoadOptions.define_options()
+    # 設定ファイル読込
+    LoadOptions.load(base_path)
+
+    # アプリケーション構築
+    app = make_app(base_path)
 
     # サーバー設定
     port = options.port

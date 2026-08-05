@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import os
 import sqlite3
 from functions.data.control_base import ControlBase
 
@@ -17,9 +18,29 @@ class ControlSqlite(ControlBase):
 			DB保存パス。未指定の場合はインメモリで動作。
 		"""
 		super().__init__()
+		self.make_db_dir(db_path)
 		self.db = sqlite3.connect(db_path)
 		self.db.row_factory = self.dict_factory
 		self.db.isolation_level = None
+
+	def make_db_dir(self, db_path):
+		"""
+		DB保存ディレクトリ作成処理
+
+		DBファイルの格納先ディレクトリが存在しない場合に作成する。
+		インメモリ指定の場合は何もしない。
+
+		Parameters
+		----------
+		db_path : string
+			DB保存パス
+		"""
+		if not db_path or db_path == ":memory:":
+			return
+		db_dir = os.path.dirname(os.path.abspath(db_path))
+		if os.path.isdir(db_dir):
+			return
+		os.makedirs(db_dir, exist_ok=True)
 
 	def dict_factory(self, cursor, row):
 		d = {}

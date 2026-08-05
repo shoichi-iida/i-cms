@@ -4,6 +4,16 @@
 		<column key="setting_key" type="text" role="ref,key" />
 		<column key="setting_value" type="text" role="ref,up" />
 	</table>
+	<table id="tbl_notice" db="db_control">
+		<column key="id" type="text" role="ref,key" />
+		<column key="notice_text" type="text" role="ref,up" />
+	</table>
+	<table id="tbl_update" db="db_control">
+		<column key="id" type="text" role="ref,key" />
+		<column key="update_date" type="text" role="ref,up" />
+		<column key="update_text" type="text" role="ref,up" />
+		<sort key="update_date" order="desc" />
+	</table>
 	<table id="mst_auth" db="db_control">
 		<column key="id" type="text" role="ref,key" />
 		<column key="name" type="text" role="ref,up" />
@@ -31,16 +41,6 @@
 		<column key="setting_value" type="text" role="ref,up" />
 	</table>
 
-	<table id="tbl_notice" db="db_control">
-		<column key="id" type="text" role="ref,key" />
-		<column key="notice_text" type="text" role="ref,up" />
-	</table>
-	<table id="tbl_update" db="db_control">
-		<column key="id" type="text" role="ref,key" />
-		<column key="update_date" type="text" role="ref,up" />
-		<column key="update_text" type="text" role="ref,up" />
-		<sort key="update_date" order="desc" />
-	</table>
 	<table id="tbl_access_hist" db="db_control">
 		<column key="access_date" type="text" role="ref,key" />
 		<column key="account_id" type="text" role="ref,key" />
@@ -75,11 +75,12 @@
 		<join id="tbl_account" name="tbl_account" join_key="account_id" on_key="id" />
 	</table>
 	<table id="tbl_auth" db="db_control">
-		<column key="id" type="text" role="ref,key" />
-		<column key="function" type="text" role="ref,key,up" />
+		<column key="id" type="int" role="ref,key" />
+		<column key="auth_id" type="text" role="ref,key,up" />
 		<column key="auth_value" type="bool" role="ref,up" />
 		<column key="auth_name" type="text" role="join" join="mst_auth" get_key="name" />
-		<join id="mst_auth" name="mst_auth" join_key="function" on_key="function" />
+		<column key="function" type="text" role="join" join="mst_auth" get_key="function" />
+		<join id="mst_auth" name="mst_auth" join_key="auth_id" on_key="id" />
 	</table>
 	<table id="tbl_group_auth" db="db_control">
 		<column key="id" type="text" role="ref,key" />

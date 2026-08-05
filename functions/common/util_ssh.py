@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 class UtilSsh:
 	"""
-	SSHÚ‘±ƒ†[ƒeƒBƒŠƒeƒBƒNƒ‰ƒX
+	SSHæŽ¥ç¶šãƒ¦ãƒ¼ãƒ†ã‚£ãƒªãƒ†ã‚£ã‚¯ãƒ©ã‚¹
 	"""
 	
 	def __init__(self, ip, user, pwd, port=22):
@@ -87,7 +87,7 @@ class UtilSsh:
 						lst.extend(self._decode_command(line, code))
 						break
 					except UnicodeDecodeError:
-						lst.append(f"{std}‚ÌƒfƒR[ƒh‚ÉŽ¸”s‚µ‚Ü‚µ‚½")
+						lst.append(f"{std}ã®ãƒ‡ã‚³ãƒ¼ãƒ‰ã«å¤±æ•—ã—ã¾ã—ãŸ")
 			result[std] = lst
 		return result
 	

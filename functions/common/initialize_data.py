@@ -108,7 +108,7 @@ class InitializeData():
 					if auth_key == "admin":
 						user_data["admin"] = user[user_id][auth_key] == "1"
 						continue
-					record["function"] = auth_key
+					record["auth_id"] = auth_key
 					record["auth_value"] = user[user_id][auth_key] in ["1", "〇"]
 					insert_data.append(record)
 				if "password" in user_data.keys():
