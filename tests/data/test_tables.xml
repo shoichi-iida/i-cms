@@ -26,7 +26,7 @@
 		<column key="function" type="text" role="ref,up" />
 		<column key="value" type="bool" role="ref,up" />
 	</table>
-	<!-- �̔ԗ�iautoincrement�j�̌��ؗp -->
+	<!-- 採番列（autoincrement）の検証用 -->
 	<table id="tbl_sequence" db="db_control">
 		<column key="id" type="int" role="ref,key" autoincrement="true" />
 		<column key="name" type="text" role="ref,up" />
