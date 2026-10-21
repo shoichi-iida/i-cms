@@ -162,18 +162,7 @@ class ControlBase(metaclass=ABCMeta):
 				continue
 			if "key" in key["role"]:
 				key_text.append(key["key"])
-			col_type = "varchar(255)"
-			if key["type"] == "int":
-				col_type = "integer"
-			elif key["type"] == "float":
-				col_type = "decimal"
-			elif key["type"] == "bool":
-				col_type = "boolean"
-			elif key["type"] == "datetime":
-				col_type = "datetime"
-			elif key["type"] == "text":
-				col_type = "text"
-			col_text.append("{0} {1}".format(key["key"], col_type))
+			col_text.append("{0} {1}".format(key["key"], self.get_column_type(key)))
 		# 採番列が主キーになるため、他のキー列と組み合わせた複合キーにはできない
 		if autoincrement_key is not None and len(key_text) > 0:
 			raise ValueError("autoincrementは単一キー列にのみ指定できます。（{0}.{1}）".format(
@@ -184,6 +173,32 @@ class ControlBase(metaclass=ABCMeta):
 			tbl_id,
 			", ".join(col_text)
 		)
+
+	def get_column_type(self, key):
+		"""
+		列定義に対応するDBの列型の取得処理
+
+		Parameters
+		----------
+		key : dict
+			列定義（テーブル定義XMLのcolumn）
+
+		Returns
+		-------
+		string
+			列型
+		"""
+		if key["type"] == "int":
+			return "integer"
+		elif key["type"] == "float":
+			return "decimal"
+		elif key["type"] == "bool":
+			return "boolean"
+		elif key["type"] == "datetime":
+			return "datetime"
+		elif key["type"] == "text":
+			return "text"
+		return "varchar(255)"
 
 	def is_autoincrement(self, key):
 		"""

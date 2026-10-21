@@ -79,7 +79,7 @@ class InitializeData():
 				insert_data.append({
 					"id": auth.get("id"),
 					"name": auth.get("name"),
-					"function": auth.get("ref_name"),
+					"function": InitializeData.get_auth_function(handler, auth.get("id")),
 					"operation": auth.get("operation"),
 				})
 			handler.ctrl_db["db_control"].insert("mst_auth", insert_data)
@@ -120,7 +120,9 @@ class InitializeData():
 					if auth_key == "admin":
 						user_data["admin"] = user[user_id][auth_key] == "1"
 						continue
-					record["function"] = auth_key
+					# ユーザ定義の属性名は権限定義のIDのため、mst_auth.functionと同じ値（ref_name）へ変換する
+					# （tbl_authはfunctionでmst_authと結合するため、IDのままでは権限が取得できない）
+					record["function"] = InitializeData.get_auth_function(handler, auth_key)
 					record["auth_value"] = user[user_id][auth_key] in ["1", "〇"]
 					insert_data.append(record)
 				if "password" in user_data.keys():
@@ -140,3 +142,25 @@ class InitializeData():
 			print(e)
 			print(traceback.format_exc())
 			handler.append_message("CE-9999", [str(e)])
+
+	@staticmethod
+	def get_auth_function(handler, auth_id):
+		"""
+		権限定義のIDに対応する機能名（mst_auth.function）の取得処理
+
+		Parameters
+		----------
+		handler : functions.handler.base_handler.BaseHandler
+			HTTPリクエスト処理クラス
+		auth_id : string
+			権限定義（define/common/auth.xml）のID
+
+		Returns
+		-------
+		string
+			権限定義のref_name。権限定義に存在しないIDの場合はauth_idをそのまま返す
+		"""
+		auth = handler.ctrl_define["auth"]["def"].get(auth_id)
+		if auth is None or not auth.get("ref_name"):
+			return auth_id
+		return auth.get("ref_name")

@@ -19,6 +19,8 @@ class ControlTinyDB(ControlBase):
 		"""
 		super().__init__()
 		self.make_db_dir(db_path)
+		# DB保存パス（インメモリの場合はNone）。データ移行（MigrateData）でのバックアップに使用する
+		self.db_path = db_path
 		if db_path is None:
 			self.db = TinyDB(storage = MemoryStorage)
 		else:
