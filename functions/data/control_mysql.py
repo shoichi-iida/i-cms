@@ -236,6 +236,32 @@ class ControlMysql(ControlBase):
 				return key
 		return None
 
+	# 主キーに含める文字列列の型。MySQLはTEXT型の列を長さ指定なしで主キーにできないため、
+	# 可変長文字列にする（utf8mb4で255文字×4バイト＝1020バイト。3列の複合キーでも
+	# InnoDBのインデックスの上限（3072バイト）に収まる）
+	KEY_TEXT_COLUMN_TYPE = "varchar(255)"
+
+	def get_column_type(self, key):
+		"""
+		列定義に対応するDBの列型の取得処理
+
+		主キーのtext列はKEY_TEXT_COLUMN_TYPEにする（MySQLはTEXT型の列を
+		長さ指定なしで主キーにできないため）。それ以外はControlBaseと同じ。
+
+		Parameters
+		----------
+		key : dict
+			列定義（テーブル定義XMLのcolumn）
+
+		Returns
+		-------
+		string
+			列型
+		"""
+		if key["type"] == "text" and "key" in key["role"]:
+			return self.KEY_TEXT_COLUMN_TYPE
+		return super().get_column_type(key)
+
 	def update(self, tbl_id, dict_update, dict_where={}):
 		"""
 		レコード更新処理

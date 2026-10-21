@@ -86,6 +86,15 @@ class TestControlMysql(TestCase):
             "create table if not exists tbl_sequence (id integer primary key auto_increment, name text);")
         self.assertEqual(args, ())
 
+    def test_create_table_text_key_uses_varchar(self):
+        """主キーのtext列はvarchar(255)になる（MySQLはTEXT型の列を長さ指定なしで主キーにできない）"""
+        self.ctrl.create_table("tbl_auth")
+        sql, args = self.last_call()
+        self.assertEqual(
+            sql,
+            "create table if not exists tbl_auth (id varchar(255), function text, value boolean, primary key(id));")
+        self.assertEqual(args, ())
+
     def test_insert_returns_generated_id(self):
         """idを指定しないINSERTは、AUTO_INCREMENTで採番したid（cursor.lastrowid）を[{"id": ...}]で返す
 

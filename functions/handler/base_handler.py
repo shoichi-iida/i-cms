@@ -75,6 +75,9 @@ class BaseHandler(web.RequestHandler):
         self.pages = pages
         self.ctrl_define = ctrl_define
         self.lock = threading.Lock()
+        # 応答の確定（finish）を遅らせるか。Trueの間、view_json・view_downloadは
+        # 応答を書き込むだけでfinishしない（ApiHandler.call_apiがコミットの成功後にfinishする）
+        self.defer_finish = False
 
         # 汎用パラメータ
         self.prm_cmn = OrderedDict()
@@ -204,7 +207,7 @@ class BaseHandler(web.RequestHandler):
             if not data:
                 break
             self.write(data)
-        self.finish()
+        self.finish_response()
 
     def view_json(self, resonse):
         """
@@ -217,6 +220,17 @@ class BaseHandler(web.RequestHandler):
         """
         self.set_header("Content-Type", "application/json")
         self.write(json.dumps(resonse))
+        self.finish_response()
+
+    def finish_response(self):
+        """
+        応答確定処理
+
+        defer_finishがTrueの間は確定しない（書き込んだ応答はバッファに残り、
+        呼び出し側がコミットの成功後にfinishする）
+        """
+        if self.defer_finish:
+            return
         self.finish()
 
     def raise_http_error(self, http_cd, msg_cd, msg_prm=[]):

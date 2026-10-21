@@ -121,6 +121,11 @@ class ApiHandler(BaseHandler):
         - APIが例外を投げた場合はロールバックする。正常に戻った場合は、まだ開いている
           トランザクションをコミットする（APIがコミット・ロールバック済みなら何もしない。
           コミットせずに書いたAPIの挙動（SQLiteの自動コミット）を変えないため）
+        - コミットに失敗した場合もロールバックする
+        - 応答（view_json・view_download）の確定は、コミットが成功するまで遅らせる
+          （defer_finish）。先に確定すると、ほかの接続の読み取りでSQLiteのCOMMITが
+          待たされて失敗した場合などに、コミットされていない変更を成功として返してしまう。
+          失敗した場合は書き込んだ応答を破棄し、例外を送出する（proc_accessがエラーを応答する）
         - 読み取り（GET）は直列化しない（ほかのリクエストを待たせないため）
         """
         method = getattr(page, self.API_METHODS[mode])
@@ -129,16 +134,27 @@ class ApiHandler(BaseHandler):
             return
         db = self.ctrl_db["db_control"]
         db.serialize_writes = True
+        self.defer_finish = True
         try:
             db.begin()
             try:
                 method(self, args)
-            except BaseException:
+                db.commit()
+            except web.Finish:
+                # APIが応答を書いて打ち切った場合（web.Finish）は、書いた応答を残す
+                # （Tornadoがfinishする）。変更はコミットしない
                 db.rollback()
                 raise
-            db.commit()
+            except BaseException:
+                db.rollback()
+                # コミットされていない処理の応答を返さないよう破棄する
+                self.clear()
+                raise
         finally:
             db.serialize_writes = False
+            self.defer_finish = False
+        if not self._finished:
+            self.finish()
 
     def proc_access(self, mode, args):
         try:

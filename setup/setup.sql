@@ -49,10 +49,18 @@ CREATE TABLE `tbl_group` (
 CREATE TABLE `tbl_account` (
     `id` INTEGER NOT NULL AUTOINCREMENT,
     `user_id` VARCHAR(30) NOT NULL,
-    `password` VARCHAR(30) NOT NULL,
+    `password` VARCHAR(255) NOT NULL,
     `name` VARCHAR(30) NOT NULL,
+    `email` VARCHAR(255) NULL,
     `admin` BOOLEAN NULL DEFAULT '0',
     `is_active` BOOLEAN NULL DEFAULT '1',
+    `is_password_set` BOOLEAN NULL DEFAULT '0',
+    `login_failed_count` INTEGER NULL DEFAULT '0',
+    `login_locked_until` VARCHAR(30) NULL,
+    `created_at` VARCHAR(30) NULL,
+    `created_by` INTEGER NULL,
+    `updated_at` VARCHAR(30) NULL,
+    `updated_by` INTEGER NULL,
     PRIMARY KEY (`id`)
 ) COMMENT 'ユーザ情報';
 

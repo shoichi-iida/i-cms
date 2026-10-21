@@ -10,6 +10,7 @@ from functions.define.base_define import BaseDefine
 from functions.common.migrate_data import MigrateData
 from functions.common.util_encrypt import UtilEncrypt
 from functions.data.control_sqlite import ControlSqlite
+from functions.data.control_mysql import ControlMysql
 from functions.data.control_tinydb import ControlTinyDB
 
 # bcryptのコストファクタを最小にしてテストの実行時間を抑える
@@ -105,6 +106,57 @@ class TestMigrateDataSqlite(TestCase):
 		self.assertEqual(self.migrate(), ["admin"])
 		admin = self.ctrl.select("tbl_account", {"id": 0})[0]
 		self.assertEqual(admin["password"], "not-hex")
+
+	def test_migrate_auth_keeps_original_table_on_failure(self):
+		"""異常系: 作業用テーブルへの投入に失敗した場合、元のtbl_authは変更されず作業用テーブルも残らない"""
+		def fail(*args, **kwargs):
+			raise RuntimeError("insert failed")
+		self.ctrl.insert = fail
+		with self.assertRaises(RuntimeError):
+			self.migrate()
+		rows = self.ctrl.exec_sql("select auth_id from tbl_auth order by auth_id")
+		self.assertEqual([r["auth_id"] for r in rows], ["ref", "up"])
+		self.assertFalse(any("_mig_" in t for t in self.get_tables()))
+		self.assertFalse(any(t.startswith("tbl_auth_mig_") for t in self.ctrl.tables))
+
+class FakeMysqlCtrl(ControlMysql):
+	"""information_schemaの問い合わせに決まった結果を返し、実行したSQLを記録するMySQL制御クラス"""
+
+	def __init__(self, password_column):
+		self.tables = {}
+		self.placeholder = "%s"
+		self.password_column = password_column
+		self.executed = []
+
+	def __del__(self):
+		pass
+
+	def exec_sql(self, sql, param=()):
+		self.executed.append(sql)
+		if "information_schema" in sql:
+			return [self.password_column] if self.password_column else []
+		return []
+
+class TestMigrateDataMysqlPassword(TestCase):
+	"""MySQLのtbl_account.passwordの列の拡張"""
+
+	def widen(self, password_column):
+		ctrl = FakeMysqlCtrl(password_column)
+		load_tables(ctrl)
+		MigrateData({"db_control": ctrl}, CTRL_DEFINE, ENCRYPT_KEY, lambda m: None).widen_password_column(ctrl)
+		return [sql for sql in ctrl.executed if sql.startswith("alter")]
+
+	def test_widen_short_varchar(self):
+		"""旧setup.sqlのVARCHAR(30) NOT NULLは、NOT NULLを保ったままtext型へ広げる"""
+		self.assertEqual(
+			self.widen({"data_type": "varchar", "length": 30, "is_nullable": "NO"}),
+			["alter table tbl_account modify column password text not null"])
+
+	def test_keep_wide_column(self):
+		"""十分な長さの文字列型・text型は変更しない"""
+		self.assertEqual(self.widen({"data_type": "varchar", "length": 255, "is_nullable": "YES"}), [])
+		self.assertEqual(self.widen({"data_type": "text", "length": 65535, "is_nullable": "YES"}), [])
+		self.assertEqual(self.widen(None), [])
 
 class TestMigrateDataTinyDB(TestCase):
 	"""旧定義（auth_id・XOR暗号）で作成したTinyDBのDBの移行"""

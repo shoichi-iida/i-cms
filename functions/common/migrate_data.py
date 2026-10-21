@@ -17,7 +17,8 @@ class MigrateData():
 	初期化（InitializeData）はtbl_settingが空の場合にしか行われないため、
 	運用中のDBにはテーブル定義の変更が反映されない。本クラスで次の移行を行う。
 
-	1. 定義に追加された列の追加（SQLite・MySQL。TinyDBは列の概念がないため不要）
+	1. 定義に追加された列の追加（SQLite・MySQL。TinyDBは列の概念がないため不要）。
+	   MySQLでtbl_account.passwordが短い文字列型（旧setup.sqlのVARCHAR(30)）の場合は拡張
 	2. tbl_authの権限キーの変換（旧: auth_id = mst_auth.id → 新: function = mst_auth.function）
 	3. tbl_accountの追加列の補完（is_password_set・login_failed_count・作成/更新日時等）
 	4. パスワードの移行（XOR暗号 → bcrypt-sha256）
@@ -35,6 +36,10 @@ class MigrateData():
 
 	# 旧定義のtbl_authの権限キー列
 	LEGACY_AUTH_KEY = "auth_id"
+
+	# tbl_account.passwordに必要な長さ。これより短い文字列型の場合は拡張する
+	# （パスワードハッシュ（bcrypt-sha256）は75文字。形式の変更に備えて余裕を持たせる）
+	PASSWORD_COLUMN_MIN_LENGTH = 255
 
 	def __init__(self, ctrl_db, ctrl_define, encrypt_key, log=print):
 		"""
@@ -75,6 +80,8 @@ class MigrateData():
 		self.migrate_auth(ctrl)
 		for db_id in self.ctrl_db.keys():
 			self.migrate_schema(self.ctrl_db[db_id])
+		# パスワードハッシュを格納できるよう、パスワードの移行より先に列を広げる
+		self.widen_password_column(ctrl)
 		return self.migrate_account(ctrl)
 
 	def migrate_schema(self, ctrl):
@@ -142,28 +149,107 @@ class MigrateData():
 		columns = self.get_columns(ctrl, "tbl_auth")
 		if not self.LEGACY_AUTH_KEY in columns:
 			return
-		# 主キー（id, auth_id → id, function）が変わるため、テーブルを作り直す
+		# 主キー（id, auth_id → id, function）が変わるため、テーブルを作り直す。
+		# MySQLのDDLは暗黙にコミットされロールバックできないため、元のテーブルを消す前に、
+		# 新しい定義の作業用テーブルを作成・投入し、成功してから入れ替える
+		# （作業用テーブルの作成・投入に失敗しても、元のテーブルはそのまま残る）
 		rows = ctrl.exec_sql("select * from tbl_auth")
 		self.backup(ctrl, "tbl_auth")
-		ctrl.begin()
+		insert_data = []
+		for row in rows:
+			auth_id = row[self.LEGACY_AUTH_KEY]
+			insert_data.append({
+				"id": row["id"],
+				"function": functions.get(auth_id, auth_id),
+				"auth_value": row.get("auth_value")
+			})
+		work_id = "tbl_auth_mig_{0}".format(self.suffix)
+		ctrl.tables[work_id] = ctrl.tables["tbl_auth"]
 		try:
-			ctrl.drop_table("tbl_auth")
-			ctrl.create_table("tbl_auth")
-			insert_data = []
-			for row in rows:
-				auth_id = row[self.LEGACY_AUTH_KEY]
-				insert_data.append({
-					"id": row["id"],
-					"function": functions.get(auth_id, auth_id),
-					"auth_value": row.get("auth_value")
-				})
-			if len(insert_data) > 0:
-				ctrl.insert("tbl_auth", insert_data, True)
-			ctrl.commit()
-		except Exception:
-			ctrl.rollback()
-			raise
+			ctrl.begin()
+			try:
+				ctrl.create_table(work_id)
+				if len(insert_data) > 0:
+					ctrl.insert(work_id, insert_data, True)
+				ctrl.commit()
+			except Exception:
+				ctrl.rollback()
+				# MySQLでは作成したテーブルがロールバックで消えないため削除する
+				ctrl.exec_sql("drop table if exists {0}".format(work_id))
+				raise
+		finally:
+			del ctrl.tables[work_id]
+		self.swap_table(ctrl, "tbl_auth", work_id)
 		self.log("tbl_authの権限キーを変換しました: {0}件".format(len(rows)))
+
+	def swap_table(self, ctrl, tbl_id, work_id):
+		"""
+		テーブルの入れ替え処理
+
+		作業用テーブル（work_id）をtbl_idへ改名し、元のテーブルを削除する。
+
+		Parameters
+		----------
+		ctrl : functions.data.control_base.ControlBase
+			DB制御クラス（SQLite・MySQL）
+		tbl_id : string
+			入れ替えるテーブルID
+		work_id : string
+			作業用テーブルID
+		"""
+		old_id = "{0}_old_{1}".format(tbl_id, self.suffix)
+		if isinstance(ctrl, ControlSqlite):
+			# SQLiteはDDLもトランザクションで扱えるため、改名・削除をまとめてコミットする
+			ctrl.begin()
+			try:
+				ctrl.exec_sql("alter table {0} rename to {1}".format(tbl_id, old_id))
+				ctrl.exec_sql("alter table {0} rename to {1}".format(work_id, tbl_id))
+				ctrl.exec_sql("drop table {0}".format(old_id))
+				ctrl.commit()
+			except Exception:
+				ctrl.rollback()
+				raise
+			return
+		# MySQLのRENAME TABLEは複数の改名を不可分に行う（途中でtbl_idが存在しない状態にならない）
+		ctrl.exec_sql("rename table {0} to {1}, {2} to {0}".format(tbl_id, old_id, work_id))
+		ctrl.exec_sql("drop table {0}".format(old_id))
+
+	def widen_password_column(self, ctrl):
+		"""
+		tbl_account.passwordの列の拡張処理（MySQL）
+
+		旧来のセットアップ（setup/setup.sql）はpasswordをVARCHAR(30)で作成していたが、
+		パスワードハッシュ（bcrypt-sha256）は75文字のため格納できない（SQLモードにより、
+		エラーになるか切り詰められて照合できなくなる）。パスワードを移行する前に、
+		短い文字列型の場合はテーブル定義の型へ変更する。SQLiteは長さを制約しないため不要。
+
+		Parameters
+		----------
+		ctrl : functions.data.control_base.ControlBase
+			DB制御クラス（db_control）
+		"""
+		if isinstance(ctrl, (ControlTinyDB, ControlSqlite)) or not "tbl_account" in ctrl.tables.keys():
+			return
+		key = next((k for k in ctrl.tables["tbl_account"].get("column", [])
+					if k.get("key") == "password"), None)
+		if key is None:
+			return
+		rows = ctrl.exec_sql(
+			"select data_type as data_type, character_maximum_length as length, is_nullable as is_nullable"
+			" from information_schema.columns"
+			" where table_schema = database() and table_name = %s and column_name = %s",
+			("tbl_account", "password"))
+		if len(rows) == 0:
+			return
+		column = rows[0]
+		if (str(column["data_type"]).lower() not in ("char", "varchar")
+				or column["length"] is None or int(column["length"]) >= self.PASSWORD_COLUMN_MIN_LENGTH):
+			return
+		ctrl.exec_sql("alter table tbl_account modify column password {0}{1}".format(
+			ctrl.get_column_type(key),
+			" not null" if str(column["is_nullable"]).upper() == "NO" else ""))
+		self.log("列の型を変更しました: tbl_account.password（{0}({1}) → {2}）".format(
+			column["data_type"], column["length"], ctrl.get_column_type(key)))
 
 	def get_auth_functions(self, ctrl):
 		"""
