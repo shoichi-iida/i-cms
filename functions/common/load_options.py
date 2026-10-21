@@ -39,7 +39,11 @@ class LoadOptions():
 		define("ldap_password", default="")
 
 		define("host_name", default="127.0.0.1")
+		define("frontend_url", default="http://127.0.0.1:5173")
 		define("encrypt_key", default="i-cms")
+		# bcryptのコストファクタ（パスワードのハッシュ化）。
+		# 値を下げると総当たり耐性が落ちるため、本番設定では下げないこと
+		define("bcrypt_rounds", default=12, type=int)
 
 		define("ssh_tunnel", default=False, type=bool)
 		define("ssh_host", default="127.0.0.1")
@@ -67,4 +71,21 @@ class LoadOptions():
 		
 		# コマンドライン設定
 		options.parse_command_line()
+
+		LoadOptions.validate()
+
+	@staticmethod
+	def validate():
+		"""
+		設定値の検証処理
+
+		決まった値の中から選ぶ設定が、決まった値かを確かめる。誤っていれば
+		ValueErrorを送出し、起動を止める（APIの実行時に気づくのでは遅いため）。
+		"""
+		choices = (
+		)
+		for name, values in choices:
+			if options[name] not in values:
+				raise ValueError("server.iniの{0}は{1}のいずれかを指定してください（指定値: {2!r}）".format(
+					name, "・".join(values), options[name]))
 

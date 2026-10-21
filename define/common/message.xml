@@ -15,5 +15,7 @@
 	<message id="CE-0008" lv="alert" text="指定されたフォルダは存在しません。 : {[0]}" />
 	<message id="CE-0009" lv="alert" text="データ格納先フォルダに{0}が存在しません。" />
 	<message id="CE-0010" lv="alert" text="データ格納先フォルダに{0}が複数存在します。" />
+	<message id="CE-0011" lv="alert" text="入力内容に誤りがあります。" />
+	<message id="CE-0012" lv="alert" text="セッションの有効期限が切れました。操作をやり直してください。" />
 	<message id="CE-9999" lv="alert" text="処理中に予期しないエラーが発生しました。 : {[0]}" />
 </data>

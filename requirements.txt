@@ -11,3 +11,5 @@ sshtunnel
 PyJWT
 pyotp
 qrcode
+pymsteams
+bcrypt

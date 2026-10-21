@@ -166,7 +166,8 @@ def make_app(base_path=None):
     for url in pages.keys():
         print_message("Starting PageHandler : {0}".format(url))
         urls.append((r"{0}".format(url), PageHandler, { "pages": pages[url], "ctrl_define": ctrl_define }))
-    for url in api.keys():
+    # Tornadoは登録順に照合し最初に一致したルートを使うため、パラメータを持たないルートから先行登録
+    for url in sorted(api.keys(), key=lambda url: "(" in url):
         print_message("Starting ApiHandler : {0}".format(url))
         urls.append((r"{0}".format(url), ApiHandler, { "api": api[url], "ctrl_define": ctrl_define }))
     for url in sockets.keys():

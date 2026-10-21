@@ -18,6 +18,7 @@ class ControlTinyDB(ControlBase):
 			DB保存パス
 		"""
 		super().__init__()
+		self.make_db_dir(db_path)
 		if db_path is None:
 			self.db = TinyDB(storage = MemoryStorage)
 		else:
@@ -30,10 +31,11 @@ class ControlTinyDB(ControlBase):
 		super().__del__()
 		self.db.close()
 
-	def begin(self):
+	def begin(self, serialize=None):
 		"""
 		トランザクション開始処理
 		TinyDBにトランザクション機能は存在しないが、I/F互換性のために定義。
+		書き込みの直列化（serialize）も未サポート。
 		"""
 		pass
 
@@ -82,7 +84,7 @@ class ControlTinyDB(ControlBase):
 		lst_exclude : list of string, default []
 			取得除外対象配列。
 		fixed_where : list of string default []
-			固定WHERE区配列（TinyDBでは未サポート）。
+			固定WHERE句配列（TinyDBでは未サポート）。
 		"""
 		if not tbl_id in self.tables.keys():
 			print("指定されたテーブル「{0}」は該当のデータベースに存在しません。".format(tbl_id))
@@ -114,7 +116,15 @@ class ControlTinyDB(ControlBase):
 				else:
 					k = key["key"]
 					v = dict_select[k]
-					c = (q[k] == v)
+					if isinstance(v, list):
+						# リスト指定はIN条件として扱う（SQLite・MySQL実装に合わせる）。
+						# 値の一致比較のままでは常に0件になり、複数IDでの絞り込みを
+						# 行うAPIが結果を返さない。
+						# 対象をlistに限るのはControlBase.__append_conditionと
+						# 揃えるため（tuple・setはどの実装でもIN展開しない）
+						c = (q[k].one_of(v))
+					else:
+						c = (q[k] == v)
 				if cond is None:
 					cond = c
 				else:
@@ -226,6 +236,45 @@ class ControlTinyDB(ControlBase):
 		else:
 			table.update(dict_update)
 
+	def increment(self, tbl_id, dict_increment, dict_where={}):
+		"""
+		指定した列の加算処理
+
+		TinyDBのupdateへ関数を渡し、読み込んだ値ではなく保存時の値を基準に
+		加算する（SQL実装と同じくアプリ側で加算した結果を書き戻さない）。
+
+		Parameters
+		----------
+		tbl_id : string
+			テーブルID
+		dict_increment : dict
+			加算する列と加算値。{ "key1" : 1 }のように指定する。
+		dict_where : dict, default {}
+			更新対象条件辞書。
+		"""
+		if not tbl_id in self.tables.keys():
+			print("指定されたテーブル「{0}」は該当のデータベースに存在しません。".format(tbl_id))
+			return
+
+		table = self.db.table(tbl_id)
+		q = Query()
+		cond = None
+		for k, v in dict_where.items():
+			if cond is None:
+				cond = (q[k] == v)
+			else:
+				cond &= (q[k] == v)
+
+		def add_values(doc):
+			for k, v in dict_increment.items():
+				# NULL・未設定は0として扱う（SQL実装のcoalesceと揃える）
+				doc[k] = (doc.get(k) or 0) + v
+
+		if cond:
+			table.update(add_values, cond)
+		else:
+			table.update(add_values)
+
 	def delete(self, tbl_id, lst_delete=[]):
 		"""
 		レコード削除処理
@@ -267,6 +316,3 @@ class ControlTinyDB(ControlBase):
 		クエリオブジェクト生成処理（後方互換用）
 		"""
 		return Query()
-
-	def escape(self, col_type, val):
-		return val

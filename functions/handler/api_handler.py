@@ -8,6 +8,10 @@ from tornado.log import app_log
 from tornado import web
 
 class ApiHandler(BaseHandler):
+    # 500応答（CE-9999）の詳細に埋め込む文言。
+    # 例外の内容はサーバー側のログにのみ残し、レスポンスへは含めない。
+    INTERNAL_ERROR_DETAIL = "管理者にお問い合わせください。"
+
     def initialize(self, api, ctrl_define):
         try:
             super().initialize(api, ctrl_define)
@@ -22,20 +26,128 @@ class ApiHandler(BaseHandler):
             app_log.error(traceback.format_exc())
 
     def prepare(self):
-        super().prepare()
         try:
-            self.prm_body = json.loads(self.request.body)
+            super().prepare()
+            self.prm_body = self.load_json_body()
+        except web.HTTPError as e:
+            # 400はリクエストが不正なUTF-8を含む場合（クエリ文字列・フォームの値は
+            # BaseHandler.prepare、JSONのボディはload_json_body）と、
+            # JSONのボディがオブジェクトでない場合（load_json_body）。
+            # TornadoのHTMLのエラーページではなく、他のバリデーションエラーと同じ
+            # 400 CE-0011のJSONで返す。全APIの前処理のため、
+            # ログイン・権限の判定（proc_access）より先に判定される
+            if e.status_code != 400:
+                raise
+            # 診断用にTornadoのメッセージ（クエリ文字列・フォームは項目名と値の先頭40バイト、
+            # JSONのボディは復号できなかったバイトと位置）を残す。
+            # e.log_messageは互換用のプロパティで、args無しなら「%」を「%%」に
+            # エスケープし、args有りなら未展開のテンプレートを返すため、
+            # 展開済みの文字列になるstr(e)を使う
+            self.append_log(str(e), "warning")
+            self.return_error_json(400, "CE-0011", [])
+            # 応答済みのため後続処理（proc_access）を行わせない（check_xsrf_cookieと同じ）
+            raise web.Finish()
+
+    def load_json_body(self):
+        """
+        リクエストボディ（JSON）の読込
+
+        Returns
+        -------
+        prm_body : dict
+            JSONとして解析した値（オブジェクト）。ボディが空・JSONとして不正な場合は空のdict
+        """
+        try:
+            body = json.loads(self.request.body)
         except json.JSONDecodeError:
-            self.prm_body = {}
+            return {}
+        except UnicodeDecodeError as e:
+            # json.loadsはbytesをUTF-8（UTF-16・UTF-32はバイトの並びから判定）として
+            # 復号してから解析する。復号の失敗はJSONDecodeErrorではなくUnicodeDecodeError。
+            # 空のボディとして扱うとボディを使わないAPIが成功してしまうため、
+            # クエリ文字列の値と同じ400のHTTPError（Tornadoのdecode_argumentと同じ形）とする
+            raise web.HTTPError(400, "Invalid unicode in request body: {0}".format(e))
+        if not isinstance(body, dict):
+            # オブジェクトでないJSON（null・配列・数値・文字列・true/false）。各APIは
+            # prm_bodyをdictとして読む（.get()・in）ため、そのまま渡すとAttributeErrorの
+            # 500になる（文字列・配列では in が部分一致・要素の判定になる）。空のボディとして
+            # 扱うとボディを使わないAPIが成功してしまうため、不正なUTF-8と同じ
+            # 400のHTTPErrorとする。ボディの内容（パスワード等を含み得る）はログに出さず、型名のみ残す
+            raise web.HTTPError(
+                400, "Request body is not a JSON object: {0}".format(type(body).__name__))
+        return body
+
+    def check_xsrf_cookie(self):
+        """
+        XSRFトークンの検証（非GETリクエスト）
+
+        Tornado既定の失敗応答はHTMLのエラーページであり、エラーコードを持たない。
+        APIの応答は全てJSON（return_error_json）で統一し、フロント側が
+        「XSRFトークンの期限切れ（再取得してリトライすべき）」と
+        「権限による403（リトライしても変わらない）」を
+        エラーコードで区別できるようにする。
+        """
+        try:
+            super().check_xsrf_cookie()
+        except web.HTTPError:
+            self.return_error_json(403, "CE-0011", [])
+            # 応答済みのため後続処理（prepare・proc_access）を行わせない。
+            # web.Finishはエラー応答を上書きしない（send_errorを呼ばない）
+            raise web.Finish()
+
+    # HTTPメソッド（proc_accessのmode）→ APIの処理メソッド名
+    API_METHODS = {
+        "get": "get_response",
+        "post": "post_response",
+        "put": "put_response",
+        "patch": "patch_response",
+        "delete": "delete_response",
+    }
+
+    def call_api(self, page, mode, args):
+        """
+        APIの処理を呼び出す。更新系（GET以外）は、書き込みを直列化したトランザクションの中で
+        呼び出す（issue #207）。
+
+        更新系のAPIは「検証 → トランザクション → 書き込み」の形で、検証とコミットの間に
+        別のプロセス（server.py は複数プロセスで動く）が状態を変えると検出できなかった。
+        リクエストの最初に直列化したトランザクションを開始し
+        （SQLite: BEGIN IMMEDIATE、MySQL: 書き込みロック）、検証から書き込みまでを
+        ほかの更新系のリクエストと重ならないようにする。
+
+        - APIの中の begin() は、既に始めたトランザクションの中では何もしない。APIが
+          途中で commit・rollback した後の begin() も、直列化したトランザクションになる
+          （serialize_writes がTrueの間）
+        - APIが例外を投げた場合はロールバックする。正常に戻った場合は、まだ開いている
+          トランザクションをコミットする（APIがコミット・ロールバック済みなら何もしない。
+          コミットせずに書いたAPIの挙動（SQLiteの自動コミット）を変えないため）
+        - 読み取り（GET）は直列化しない（ほかのリクエストを待たせないため）
+        """
+        method = getattr(page, self.API_METHODS[mode])
+        if mode == "get":
+            method(self, args)
+            return
+        db = self.ctrl_db["db_control"]
+        db.serialize_writes = True
+        try:
+            db.begin()
+            try:
+                method(self, args)
+            except BaseException:
+                db.rollback()
+                raise
+            db.commit()
+        finally:
+            db.serialize_writes = False
 
     def proc_access(self, mode, args):
         try:
             if self.is_error:
-                self.set_http_status(500, "CE-9999", ["管理者にお問い合わせください。"])
+                self.set_http_status(500, "CE-9999", [self.INTERNAL_ERROR_DETAIL])
                 self.view_json({
                     "error": {
                         "code": "CE-9999",
-                        "message": self.get_message("CE-9999", ["管理者にお問い合わせください。"])
+                        "message": self.get_message("CE-9999", [self.INTERNAL_ERROR_DETAIL])
                     }
                 })
                 return
@@ -74,16 +186,7 @@ class ApiHandler(BaseHandler):
                         }
                     })
                     return
-                if mode == "get":
-                    page.get_response(self, args)
-                elif mode == "post":
-                    page.post_response(self, args)
-                elif mode == "put":
-                    page.put_response(self, args)
-                elif mode == "patch":
-                    page.patch_response(self, args)
-                elif mode == "delete":
-                    page.delete_response(self, args)
+                self.call_api(page, mode, args)
                 return
             self.set_http_status(404, "CE-0006", [key])
             self.view_json({
@@ -106,10 +209,13 @@ class ApiHandler(BaseHandler):
             self.append_log(self.prm_cmn.get("account_id", "Non Login"), "alert")
             print(e)
             print(traceback.format_exc())
-            self.set_http_status(500, "CE-9999", [str(e)])
+            # 例外の内容（メッセージ・スタックトレース）はサーバー側のログにのみ残し、
+            # レスポンスには含めない。実装の内部情報（DBのカラム名・SQL・ファイルパス等）を
+            # 未認証の相手も含めた呼び出し元へ漏らさないため（prepareの異常時と同じ文言）。
+            self.set_http_status(500, "CE-9999", [self.INTERNAL_ERROR_DETAIL])
             self.view_json({
                 "error": {
                     "code": "CE-9999",
-                    "message": self.get_message("CE-9999", [str(e)])
+                    "message": self.get_message("CE-9999", [self.INTERNAL_ERROR_DETAIL])
                 }
             })

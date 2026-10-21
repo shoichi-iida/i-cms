@@ -26,8 +26,17 @@
 		<column key="user_id" type="text" role="ref,up" />
 		<column key="password" type="text" role="ref,up" />
 		<column key="name" type="text" role="ref,up" />
+		<column key="email" type="text" role="ref,up" />
 		<column key="admin" type="bool" role="ref,up" />
 		<column key="is_active" type="bool" role="ref,up" />
+		<column key="is_password_set" type="bool" role="ref,up" />
+		<!-- ログイン失敗ロック（AUTH001）: 連続失敗回数とロック解除時刻 -->
+		<column key="login_failed_count" type="int" role="ref,up" default="0" />
+		<column key="login_locked_until" type="text" role="ref,up" />
+		<column key="created_at" type="text" role="ref,up" />
+		<column key="created_by" type="int" role="ref,up" />
+		<column key="updated_at" type="text" role="ref,up" />
+		<column key="updated_by" type="int" role="ref,up" />
 	</table>
 	<table id="tbl_account_token" db="db_control">
 		<column key="id" type="text" role="ref,key" />
@@ -76,11 +85,10 @@
 	</table>
 	<table id="tbl_auth" db="db_control">
 		<column key="id" type="int" role="ref,key" />
-		<column key="auth_id" type="text" role="ref,key,up" />
+		<column key="function" type="text" role="ref,key,up" />
 		<column key="auth_value" type="bool" role="ref,up" />
 		<column key="auth_name" type="text" role="join" join="mst_auth" get_key="name" />
-		<column key="function" type="text" role="join" join="mst_auth" get_key="function" />
-		<join id="mst_auth" name="mst_auth" join_key="auth_id" on_key="id" />
+		<join id="mst_auth" name="mst_auth" join_key="function" on_key="function" />
 	</table>
 	<table id="tbl_group_auth" db="db_control">
 		<column key="id" type="text" role="ref,key" />

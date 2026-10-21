@@ -26,4 +26,9 @@
 		<column key="function" type="text" role="ref,up" />
 		<column key="value" type="bool" role="ref,up" />
 	</table>
+	<!-- Ì”Ô—ñiautoincrementj‚ÌŒŸØ—p -->
+	<table id="tbl_sequence" db="db_control">
+		<column key="id" type="int" role="ref,key" autoincrement="true" />
+		<column key="name" type="text" role="ref,up" />
+	</table>
 </data>
