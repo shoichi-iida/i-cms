@@ -46,6 +46,25 @@ class TestControlSqlite(TestCase):
 		self.ctrl_base.increment("tbl_account", {"admin": 2}, {"id": "test3"})
 		self.assertEqual(self.admin_of("test3"), 2)
 
+	def test_bool_string_conditions(self):
+		"""bool列の条件の文字列（"false"・"1"等）は保存時と同じく真偽値として比較する（WHERE・UPDATE・DELETE）"""
+		self.ctrl_base.insert("tbl_auth", [
+			{"id": "a", "function": "f", "value": "false"},
+			{"id": "b", "function": "f", "value": "true"},
+		])
+		self.assertEqual([r["id"] for r in self.ctrl_base.select("tbl_auth", {"value": "false"})], ["a"])
+		self.assertEqual([r["id"] for r in self.ctrl_base.select("tbl_auth", {"value": "1"})], ["b"])
+		# 演算子指定・リストの値も正規化する
+		self.assertEqual(
+			[r["id"] for r in self.ctrl_base.select("tbl_auth", {"value": {"value": "true", "operator": "="}})], ["b"])
+		self.assertEqual(
+			sorted(r["id"] for r in self.ctrl_base.select("tbl_auth", {"value": ["false", "true"]})), ["a", "b"])
+		self.ctrl_base.update("tbl_auth", {"function": "g"}, {"value": "false"})
+		self.assertEqual(
+			[(r["id"], r["function"]) for r in self.ctrl_base.select("tbl_auth")], [("a", "g"), ("b", "f")])
+		self.ctrl_base.delete("tbl_auth", [{"value": "false"}])
+		self.assertEqual([r["id"] for r in self.ctrl_base.select("tbl_auth")], ["b"])
+
 	def admin_of(self, account_id):
 		return self.ctrl_base.exec_sql(
 			"SELECT admin FROM tbl_account WHERE id = ?;", [account_id])[0]["admin"]

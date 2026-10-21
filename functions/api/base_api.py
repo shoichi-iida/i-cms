@@ -343,6 +343,20 @@ class BaseApi():
             return None
         return min(rows, key=lambda row: row["id"])
 
+    def normalize_account_id(self, account_id):
+        """
+        アカウントID（tbl_account.id）を数値へ正規化する。
+
+        URLから受け取ったIDは文字列、DBから取得したIDは数値のため、そろえて比較・更新する。
+        TinyDBの条件は型まで一致する必要があり（"0" と 0 は一致しない）、文字列のままでは
+        初期化（InitializeData）で数値のIDを保存した行を更新できないため、数値にする。
+        数値として解釈できない値はそのまま返す。
+        """
+        try:
+            return int(account_id)
+        except (TypeError, ValueError):
+            return account_id
+
     def reset_login_failure(self, handler, *account_ids):
         """
         ログイン失敗回数とロック解除時刻をクリアする（独立したトランザクション）。
@@ -363,7 +377,7 @@ class BaseApi():
         db = handler.ctrl_db["db_control"]
         try:
             db.begin()
-            for account_id in dict.fromkeys(str(i) for i in account_ids):
+            for account_id in dict.fromkeys(self.normalize_account_id(i) for i in account_ids):
                 db.update("tbl_account", self.get_login_failure_reset_values(),
                           {"id": account_id})
             db.commit()

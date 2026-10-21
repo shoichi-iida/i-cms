@@ -641,9 +641,20 @@ class ControlBase(metaclass=ABCMeta):
 		val = record.get(key["key"], key.get("default", None))
 		if val == "" or val is None:
 			return None
-		if key.get("type") == "bool" and not isinstance(val, bool):
-			return str(val).strip().lower() in ("true", "1")
-		return val
+		return self.normalize_bool(key, val)
+
+	def normalize_bool(self, key, val):
+		"""
+		bool列の値の正規化処理
+
+		bool列に真偽値以外（文字列等）が渡された場合はPythonのboolへ変換する
+		（"true" / "1" を真とする）。bool列以外・None・真偽値はそのまま返す。
+		INSERT・UPDATEの値（get_value）とWHERE句の条件（__append_where）で同じ変換を行い、
+		保存した値と条件の値が一致するようにする。
+		"""
+		if key.get("type") != "bool" or val is None or isinstance(val, bool):
+			return val
+		return str(val).strip().lower() in ("true", "1")
 
 	def __append_where(self, lst_text, lst_params, key, record, name=""):
 		"""
@@ -662,11 +673,23 @@ class ControlBase(metaclass=ABCMeta):
 		val = record.get(k, None)
 		if key.get("get_key"):
 			k = key["get_key"]
+		# bool列の条件は保存時（get_value）と同じく真偽値へ正規化する。値の埋め込み時は
+		# SQLのtrue/falseリテラルとして比較していたため、文字列のままバインドすると
+		# "false"等の条件が一致しなくなる（演算子指定・リストの値も同様）
 		if isinstance(val, dict):
 			self.__append_condition(lst_text, lst_params, tbl_name, k,
-				val.get("value"), val.get("operator", "="))
+				self.normalize_where_value(key, val.get("value")), val.get("operator", "="))
 		else:
-			self.__append_condition(lst_text, lst_params, tbl_name, k, val)
+			self.__append_condition(lst_text, lst_params, tbl_name, k,
+				self.normalize_where_value(key, val))
+
+	def normalize_where_value(self, key, val):
+		"""
+		WHERE句の条件値の正規化処理（bool列の値を真偽値へ変換する。リストは要素ごと）
+		"""
+		if isinstance(val, list):
+			return [self.normalize_bool(key, v) for v in val]
+		return self.normalize_bool(key, val)
 
 	def __append_condition(self, lst_text, lst_params, tbl_name, key, val, operator="="):
 		"""
