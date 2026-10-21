@@ -53,6 +53,9 @@ class FakeConnection:
     def cursor(self):
         return FakeCursor(self.calls, self.lastrowid)
 
+    def begin(self):
+        self.calls.append(("BEGIN", ()))
+
     def close(self):
         pass
 
@@ -118,9 +121,23 @@ class TestControlMysql(TestCase):
         """AUTO_INCREMENTの列へ0を指定したINSERTは、MySQLが採番したid（cursor.lastrowid）を返す"""
         self.fake_db.lastrowid = 8
         self.assertEqual(self.ctrl.insert("tbl_sequence", [{"id": 0, "name": "a"}]), [{"id": 8}])
+        # 整数の文字列（"0"）も0として扱う
+        self.assertEqual(self.ctrl.insert("tbl_sequence", [{"id": "0", "name": "a"}]), [{"id": 8}])
         # NO_AUTO_VALUE_ON_ZEROモードで0がそのまま保存された場合はlastrowidも0
         self.fake_db.lastrowid = 0
         self.assertEqual(self.ctrl.insert("tbl_sequence", [{"id": 0, "name": "a"}]), [{"id": 0}])
+
+    def test_begin_rejects_serialize_inside_non_serialized_transaction(self):
+        """直列化していないトランザクションの中での直列化は、書き込みロックを取らずに例外にする
+
+        REPEATABLE READでは最初の読み取り時点のスナップショットを読み続けるため、
+        途中でロックを取っても、それまでにコミットされた変更を見落とすため。
+        """
+        self.ctrl.begin()
+        with self.assertRaises(Exception):
+            self.ctrl.begin(serialize=True)
+        self.assertFalse(any("get_lock" in sql for sql, args in self.fake_db.calls))
+        self.assertFalse(self.ctrl.write_lock_held)
 
     def test_insert_zero_into_non_autoincrement_returns_zero(self):
         """採番列でないid列へ0を指定したINSERTは、指定した0を返す"""

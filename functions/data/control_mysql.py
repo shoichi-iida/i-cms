@@ -66,10 +66,17 @@ class ControlMysql(ControlBase):
 		トランザクション内の判定から書き込みまでが直列化される。InnoDBの行ロック
 		（select の for_update）と違い、まだ存在しない行（重複チェックの後のINSERT）も守れる。
 		既にトランザクション中なら BEGIN を発行しない（pymysql の begin は実行中の
-		トランザクションを暗黙にコミットするため）
+		トランザクションを暗黙にコミットするため）。
+		直列化していないトランザクションの中で直列化を求められた場合は、ロックを取らずに
+		例外にする（ControlSqlite.begin と同じ）。REPEATABLE READ ではトランザクションの
+		最初の読み取り時点のスナップショットを読み続けるため、途中でロックを取っても、
+		ロックを取るまでにほかの接続がコミットした変更を見落とし、判定と書き込みが競合する
+		（直列化するリクエストは最初に begin する。ApiHandler.call_api）
 		"""
 		if serialize is None:
 			serialize = self.serialize_writes
+		if serialize and self.in_transaction and not self.write_lock_held:
+			raise Exception("直列化していないトランザクションの中では、書き込みを直列化できません")
 		if serialize and not self.write_lock_held:
 			rows = self.exec_sql("select get_lock(%s, %s) as acquired",
 								 (self.write_lock_name, self.WRITE_LOCK_TIMEOUT_SECONDS))
@@ -221,6 +228,12 @@ class ControlMysql(ControlBase):
 					result.extend(cursor.fetchall())
 					continue
 				record_id = self.get_value(id_column, record)
+				if self.is_autoincrement(id_column) and isinstance(record_id, str):
+					# 採番列は整数のため、整数の文字列（"0"等）は数値として扱う
+					try:
+						record_id = int(record_id)
+					except ValueError:
+						pass
 				# AUTO_INCREMENTの列へ0を指定した場合も、MySQLは（NO_AUTO_VALUE_ON_ZERO
 				# モードでなければ）採番するため、cursor.lastrowidを返す。
 				# NO_AUTO_VALUE_ON_ZEROモードで0がそのまま保存された場合は、lastrowidも0になる

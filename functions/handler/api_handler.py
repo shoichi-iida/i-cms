@@ -143,12 +143,21 @@ class ApiHandler(BaseHandler):
             except web.Finish:
                 # APIが応答を書いて打ち切った場合（web.Finish）は、書いた応答を残す
                 # （Tornadoがfinishする）。変更はコミットしない
-                db.rollback()
+                try:
+                    db.rollback()
+                except BaseException:
+                    # ロールバックに失敗した場合はエラーを応答するため、書いた応答を破棄する
+                    self.clear()
+                    raise
                 raise
             except BaseException:
-                db.rollback()
-                # コミットされていない処理の応答を返さないよう破棄する
-                self.clear()
+                # コミットされていない処理の応答を返さないよう破棄する。
+                # ロールバック自体が失敗した場合（接続断等）も破棄する（破棄しないと、
+                # proc_accessが書きかけの応答の後ろにエラーのJSONを追記してしまう）
+                try:
+                    db.rollback()
+                finally:
+                    self.clear()
                 raise
         finally:
             db.serialize_writes = False

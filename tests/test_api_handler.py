@@ -16,9 +16,10 @@ from tornado import web
 from functions.handler.api_handler import ApiHandler
 
 class FakeDB:
-	def __init__(self, events, commit_error=None):
+	def __init__(self, events, commit_error=None, rollback_error=None):
 		self.events = events
 		self.commit_error = commit_error
+		self.rollback_error = rollback_error
 		self.serialize_writes = False
 
 	def begin(self, serialize=None):
@@ -31,6 +32,8 @@ class FakeDB:
 
 	def rollback(self):
 		self.events.append("rollback")
+		if self.rollback_error is not None:
+			raise self.rollback_error
 
 class FakeHandler(ApiHandler):
 	"""応答の書き込み・確定・破棄を記録するApiHandler"""
@@ -108,6 +111,24 @@ class TestCallApi(TestCase):
 		self.assertEqual(events, ["begin", "commit", "rollback", "clear"])
 		self.assertEqual(handler.body, [])
 		self.assertFalse(handler.defer_finish)
+
+	def test_rollback_failure_discards_response(self):
+		"""異常系: コミット後のロールバックも失敗した場合（接続断等）も、書き込んだ応答を破棄する"""
+		events = []
+		handler = FakeHandler(FakeDB(events, RuntimeError("lost connection"), RuntimeError("lost connection")))
+		with self.assertRaises(RuntimeError):
+			handler.call_api(FakeApi(), "post", [])
+		self.assertEqual(events, ["begin", "commit", "rollback", "clear"])
+		self.assertEqual(handler.body, [])
+
+	def test_web_finish_rollback_failure_discards_response(self):
+		"""異常系: web.Finishの後のロールバックが失敗した場合は、書いた応答を破棄してロールバックの例外を送出する"""
+		events = []
+		handler = FakeHandler(FakeDB(events, rollback_error=RuntimeError("lost connection")))
+		with self.assertRaises(RuntimeError):
+			handler.call_api(FakeApi(web.Finish()), "post", [])
+		self.assertEqual(events, ["begin", "rollback", "clear"])
+		self.assertEqual(handler.body, [])
 
 	def test_api_error_discards_response(self):
 		"""異常系: APIが例外を送出した場合はコミットせずロールバックし、応答を破棄する"""
