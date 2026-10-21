@@ -57,7 +57,8 @@ Linux/Mac環境の場合:
 4. サーバーを起動する
 
 移行スクリプトは次を行います。何度実行しても移行済みのデータは変更しません。
-- 定義に追加された列の追加（SQLite・MySQL）
+- 定義に追加された列の追加（SQLite・MySQL）。MySQLで `tbl_account.password` が短い文字列型（旧 `setup.sql` の `VARCHAR(30)`）の場合は拡張
+- 旧 `setup.sql` で作成した `mst_auth` の列名の変更（`auth_id` → `id`、`auth_name` → `name`。MySQL 8.0以降・MariaDB 10.5.2以降が必要）
 - `tbl_auth` の権限キーの変換（`auth_id`（権限定義のID）→ `function`（`mst_auth.function`））
 - `tbl_account` の追加列の補完（`is_password_set`・`login_failed_count`・作成/更新日時等）
 - パスワードの移行（XOR暗号 → bcrypt）

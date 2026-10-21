@@ -9,6 +9,7 @@ Tornadoのアプリケーション・DBへは接続せず、応答の書き込�
 
 import os
 import sys
+from types import SimpleNamespace
 from unittest import TestCase
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from tornado import web
@@ -40,6 +41,24 @@ class FakeHandler(ApiHandler):
 		self.defer_finish = False
 		self._finished = False
 		self.body = []
+		self.status = 200
+		# proc_access用
+		self.is_error = False
+		self.prm_cmn = {}
+		self.prm_req = {}
+		self.request = SimpleNamespace(path="/api/test")
+
+	def get_operation(self):
+		return []
+
+	def get_message(self, msg_cd, msg_prm=[]):
+		return msg_cd
+
+	def append_log(self, message, msg_type="normal"):
+		pass
+
+	def set_status(self, status_code, reason=None):
+		self.status = status_code
 
 	def set_header(self, name, value):
 		pass
@@ -58,6 +77,9 @@ class FakeHandler(ApiHandler):
 class FakeApi:
 	def __init__(self, error=None):
 		self.error = error
+		self.maintenance_use = False
+		self.need_login = False
+		self.need_auth = ""
 
 	def respond(self, handler, args):
 		handler.view_json({"result": "ok"})
@@ -110,3 +132,26 @@ class TestCallApi(TestCase):
 		handler = FakeHandler(FakeDB(events))
 		handler.call_api(FakeApi(), "get", [])
 		self.assertEqual(events, ["finish"])
+
+class TestProcAccess(TestCase):
+	def test_web_finish_propagates(self):
+		"""正常系: 更新系APIがweb.Finishで打ち切った場合、proc_accessも500の応答を追記せずに送出する"""
+		events = []
+		handler = FakeHandler(FakeDB(events))
+		handler.pages = [FakeApi(web.Finish())]
+		with self.assertRaises(web.Finish):
+			handler.proc_access("post", [])
+		self.assertEqual(handler.status, 200)
+		self.assertEqual(handler.body, ['{"result": "ok"}'])
+		self.assertEqual(events, ["begin", "rollback"])
+
+	def test_api_error_returns_500(self):
+		"""異常系: APIの例外は書き込んだ応答を破棄し、500のエラー応答だけを確定する"""
+		events = []
+		handler = FakeHandler(FakeDB(events))
+		handler.pages = [FakeApi(ValueError("invalid"))]
+		handler.proc_access("post", [])
+		self.assertEqual(handler.status, 500)
+		self.assertEqual(len(handler.body), 1)
+		self.assertIn("CE-9999", handler.body[0])
+		self.assertEqual(events, ["begin", "rollback", "clear", "finish"])

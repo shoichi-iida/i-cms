@@ -82,11 +82,11 @@ CREATE TABLE `tbl_account_settings` (
 ) COMMENT 'ユーザ設定情報';
 
 CREATE TABLE `mst_auth` (
-  `auth_id` varchar(36) NOT NULL DEFAULT uuid(),
-  `auth_name` varchar(30) NOT NULL,
+  `id` varchar(36) NOT NULL DEFAULT uuid(),
+  `name` varchar(30) NOT NULL,
   `function` varchar(50) NOT NULL,
   `operation` bit(1) NOT NULL DEFAULT b'0',
-  PRIMARY KEY (`auth_id`),
+  PRIMARY KEY (`id`),
   UNIQUE KEY `UN_MST_AUTH` (`function`)
 ) COMMENT='権限マスタ';
 
@@ -154,5 +154,5 @@ CREATE TABLE `mst_menu_auth` (
 	`auth_id` VARCHAR(36) NOT NULL,
 	PRIMARY KEY (`menu_id`, `auth_id`),
 	CONSTRAINT `FK_MST_MENU_ID` FOREIGN KEY (`menu_id`) REFERENCES `mst_menu` (`menu_id`) ON UPDATE CASCADE ON DELETE CASCADE,
-	CONSTRAINT `FK_MST_MENU_AUTH` FOREIGN KEY (`auth_id`) REFERENCES `mst_auth` (`auth_id`) ON UPDATE CASCADE ON DELETE CASCADE
+	CONSTRAINT `FK_MST_MENU_AUTH` FOREIGN KEY (`auth_id`) REFERENCES `mst_auth` (`id`) ON UPDATE CASCADE ON DELETE CASCADE
 ) COMMENT 'メニュー権限マスタ';

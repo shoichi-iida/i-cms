@@ -199,7 +199,8 @@ class ControlMysql(ControlBase):
 		id列を持つテーブルでは、SQLite（returning句）と同じく挿入した行のidを
 		[{"id": ...}]の形でレコードごとに返す。
 		MySQLにはreturning句がないため、idを指定した場合はその値を、指定しない場合
-		（AUTO_INCREMENTで採番）はcursor.lastrowidを返す。
+		（AUTO_INCREMENTで採番）と、AUTO_INCREMENTの列へ0を指定した場合は
+		cursor.lastrowidを返す。
 
 		Parameters
 		----------
@@ -220,7 +221,13 @@ class ControlMysql(ControlBase):
 					result.extend(cursor.fetchall())
 					continue
 				record_id = self.get_value(id_column, record)
-				result.append({"id": cursor.lastrowid if record_id is None else record_id})
+				# AUTO_INCREMENTの列へ0を指定した場合も、MySQLは（NO_AUTO_VALUE_ON_ZERO
+				# モードでなければ）採番するため、cursor.lastrowidを返す。
+				# NO_AUTO_VALUE_ON_ZEROモードで0がそのまま保存された場合は、lastrowidも0になる
+				if (record_id is None or (self.is_autoincrement(id_column) and record_id == 0)) \
+						and cursor.lastrowid is not None:
+					record_id = cursor.lastrowid
+				result.append({"id": record_id})
 		return result
 
 	def get_id_column(self, tbl_id):

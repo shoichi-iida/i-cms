@@ -114,6 +114,19 @@ class TestControlMysql(TestCase):
         self.assertEqual(result, [{"id": 3}, {"id": 4}])
         self.assertEqual(len(self.fake_db.calls), 2)
 
+    def test_insert_zero_into_autoincrement_returns_generated_id(self):
+        """AUTO_INCREMENTの列へ0を指定したINSERTは、MySQLが採番したid（cursor.lastrowid）を返す"""
+        self.fake_db.lastrowid = 8
+        self.assertEqual(self.ctrl.insert("tbl_sequence", [{"id": 0, "name": "a"}]), [{"id": 8}])
+        # NO_AUTO_VALUE_ON_ZEROモードで0がそのまま保存された場合はlastrowidも0
+        self.fake_db.lastrowid = 0
+        self.assertEqual(self.ctrl.insert("tbl_sequence", [{"id": 0, "name": "a"}]), [{"id": 0}])
+
+    def test_insert_zero_into_non_autoincrement_returns_zero(self):
+        """採番列でないid列へ0を指定したINSERTは、指定した0を返す"""
+        self.fake_db.lastrowid = 8
+        self.assertEqual(self.ctrl.insert("tbl_auth", [{"id": 0, "function": "f"}]), [{"id": 0}])
+
     def test_insert_without_id_column_returns_empty(self):
         """id列を持たないテーブルのINSERTは、従来どおりfetchallの結果（空配列）を返す"""
         self.fake_db.lastrowid = 7

@@ -19,7 +19,8 @@ class MigrateData():
 
 	1. 定義に追加された列の追加（SQLite・MySQL。TinyDBは列の概念がないため不要）。
 	   MySQLでtbl_account.passwordが短い文字列型（旧setup.sqlのVARCHAR(30)）の場合は拡張
-	2. tbl_authの権限キーの変換（旧: auth_id = mst_auth.id → 新: function = mst_auth.function）
+	2. 旧setup.sqlのmst_authの列名の変更（auth_id → id、auth_name → name）と、
+	   tbl_authの権限キーの変換（旧: auth_id = mst_auth.id → 新: function = mst_auth.function）
 	3. tbl_accountの追加列の補完（is_password_set・login_failed_count・作成/更新日時等）
 	4. パスワードの移行（XOR暗号 → bcrypt-sha256）
 
@@ -36,6 +37,9 @@ class MigrateData():
 
 	# 旧定義のtbl_authの権限キー列
 	LEGACY_AUTH_KEY = "auth_id"
+
+	# 旧setup.sqlのmst_authの列名 → 現在の定義の列名
+	LEGACY_AUTH_MASTER_COLUMNS = {"auth_id": "id", "auth_name": "name"}
 
 	# tbl_account.passwordに必要な長さ。これより短い文字列型の場合は拡張する
 	# （パスワードハッシュ（bcrypt-sha256）は75文字。形式の変更に備えて余裕を持たせる）
@@ -75,6 +79,8 @@ class MigrateData():
 			パスワードを移行できなかったアカウントのuser_id
 		"""
 		ctrl = self.ctrl_db["db_control"]
+		# 権限キーの変換はmst_authを参照するため、mst_authを先に現在の定義の列名にする
+		self.migrate_auth_master(ctrl)
 		# 権限キーの変換は、列の追加より先に行う（先に列を追加すると、旧定義のtbl_authへ
 		# function列だけが追加され、変換が必要かを判定できなくなるため）
 		self.migrate_auth(ctrl)
@@ -116,6 +122,36 @@ class MigrateData():
 				ctrl.exec_sql("alter table {0} add column {1} {2}".format(
 					tbl_id, key["key"], ctrl.get_column_type(key)))
 				self.log("列を追加しました: {0}.{1}".format(tbl_id, key["key"]))
+
+	def migrate_auth_master(self, ctrl):
+		"""
+		mst_authの列名の変更処理
+
+		旧来のセットアップ（setup/setup.sql）はmst_authを(auth_id, auth_name, function, operation)で
+		作成していたが、現在の定義は(id, name, function, operation)のため、列名を変更する。
+		列名の変更は値（ID・名称）を保ち、ほかのテーブルからの外部キーの参照
+		（mst_menu_auth.auth_id → mst_auth.auth_id）もDBが新しい列名へ付け替える。
+
+		Parameters
+		----------
+		ctrl : functions.data.control_base.ControlBase
+			DB制御クラス（db_control）
+
+		Notes
+		-----
+		ALTER TABLE ... RENAME COLUMNを使用する（SQLite 3.25以降、MySQL 8.0以降、MariaDB 10.5.2以降）。
+		"""
+		if isinstance(ctrl, ControlTinyDB) or not "mst_auth" in ctrl.tables.keys():
+			return
+		columns = self.get_columns(ctrl, "mst_auth")
+		renames = [(old, new) for old, new in self.LEGACY_AUTH_MASTER_COLUMNS.items()
+				   if old in columns and not new in columns]
+		if len(renames) == 0:
+			return
+		self.backup(ctrl, "mst_auth")
+		for old, new in renames:
+			ctrl.exec_sql("alter table mst_auth rename column {0} to {1}".format(old, new))
+			self.log("列名を変更しました: mst_auth.{0} → {1}".format(old, new))
 
 	def migrate_auth(self, ctrl):
 		"""

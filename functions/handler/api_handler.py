@@ -213,6 +213,10 @@ class ApiHandler(BaseHandler):
             })
         except web.HTTPError as e:
             raise e
+        except web.Finish:
+            # APIが応答を書いて打ち切った場合（web.Finish）は、書いた応答のままTornadoに
+            # 確定させる（下のExceptionで捕まえると500のエラー応答を追記してしまうため）
+            raise
         except ExceptCommon as e:
             self.set_http_status(500, e.msg_id, e.param)
             self.view_json({

@@ -119,6 +119,39 @@ class TestMigrateDataSqlite(TestCase):
 		self.assertFalse(any("_mig_" in t for t in self.get_tables()))
 		self.assertFalse(any(t.startswith("tbl_auth_mig_") for t in self.ctrl.tables))
 
+class TestMigrateDataLegacySetupSql(TestCase):
+	"""旧setup.sqlのレイアウト（mst_auth(auth_id, auth_name, ...)・tbl_auth.function）で作成したDBの移行"""
+
+	def setUp(self):
+		self.ctrl = ControlSqlite()
+		load_tables(self.ctrl)
+		self.ctrl.exec_sql("pragma foreign_keys = on")
+		self.ctrl.exec_sql("create table mst_auth (auth_id varchar(36) not null, auth_name varchar(30) not null, function varchar(50) not null, operation integer, primary key(auth_id), unique(function))")
+		self.ctrl.exec_sql("create table mst_menu_auth (menu_id varchar(36) not null, auth_id varchar(36) not null, primary key(menu_id, auth_id), foreign key(auth_id) references mst_auth(auth_id))")
+		self.ctrl.exec_sql("create table tbl_account (id integer, user_id varchar(30) not null, password varchar(30) not null, name varchar(30) not null, admin boolean, is_active boolean, primary key(id))")
+		self.ctrl.exec_sql("create table tbl_auth (id varchar(30) not null, function varchar(50) not null, auth_value boolean, primary key(id, function), foreign key(function) references mst_auth(function))")
+		self.ctrl.exec_sql("insert into mst_auth values ('a1', '参照権限', '参照', 0)")
+		self.ctrl.exec_sql("insert into mst_menu_auth values ('m1', 'a1')")
+		self.ctrl.exec_sql("insert into tbl_account values (0, 'admin', ?, '管理者', 1, 1)",
+						   (UtilEncrypt.encrypt_xor(PASSWORD, ENCRYPT_KEY),))
+		self.ctrl.exec_sql("insert into tbl_auth values ('0', '参照', 1)")
+
+	def test_migrate(self):
+		"""移行: mst_authの列名を変更し（値と外部キーの参照を保つ）、パスワード等の移行まで行う"""
+		self.assertEqual(
+			MigrateData({"db_control": self.ctrl}, CTRL_DEFINE, ENCRYPT_KEY, lambda m: None).exec(), [])
+		self.assertEqual(self.ctrl.select("mst_auth"),
+						 [{"id": "a1", "name": "参照権限", "function": "参照", "operation": 0}])
+		# ほかのテーブルからの外部キーの参照も新しい列名へ付け替わる
+		menu_auth_sql = self.ctrl.exec_sql(
+			"select sql from sqlite_master where name = 'mst_menu_auth'")[0]["sql"]
+		self.assertIn("references mst_auth(id)", menu_auth_sql.replace('"', ""))
+		self.assertEqual(self.ctrl.exec_sql("pragma foreign_key_check"), [])
+		# tbl_authは既にfunctionのため変換しない
+		self.assertEqual([r["auth_name"] for r in self.ctrl.select("tbl_auth")], ["参照権限"])
+		admin = self.ctrl.select("tbl_account")[0]
+		self.assertTrue(UtilEncrypt.verify_password(PASSWORD, admin["password"]))
+
 class FakeMysqlCtrl(ControlMysql):
 	"""information_schemaの問い合わせに決まった結果を返し、実行したSQLを記録するMySQL制御クラス"""
 
