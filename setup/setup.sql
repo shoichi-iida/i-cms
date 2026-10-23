@@ -64,14 +64,14 @@ CREATE TABLE `tbl_account` (
     PRIMARY KEY (`id`)
 ) COMMENT 'ユーザ情報';
 
+-- トークンはアカウントごとに1つ（ログインのたびに置き換える）。idはJWTのsub（文字列）で照合するため文字列型
 CREATE TABLE `tbl_account_token` (
-    `id` INTEGER NOT NULL,
-    `token` VARCHAR(50) NOT NULL,
-    `expires_at` DATE NOT NULL,
+    `id` VARCHAR(255) NOT NULL,
+    `token` TEXT NOT NULL,
+    `expires_at` VARCHAR(19) NOT NULL,
     `revoked` BOOLEAN NULL DEFAULT '0',
-    PRIMARY KEY (`id`, `token`),
-    CONSTRAINT `FK_ACCOUNT_SETTINGS_TBL` FOREIGN KEY (`id`) REFERENCES `tbl_account` (`id`) ON UPDATE CASCADE ON DELETE CASCADE
-) COMMENT 'ユーザ設定情報';
+    PRIMARY KEY (`id`)
+) COMMENT 'ユーザトークン情報';
 
 CREATE TABLE `tbl_account_settings` (
     `id` VARCHAR(30) NOT NULL,

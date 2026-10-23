@@ -135,6 +135,8 @@ class TestMigrateDataLegacySetupSql(TestCase):
 		self.ctrl.exec_sql("insert into tbl_account values (0, 'admin', ?, '管理者', 1, 1)",
 						   (UtilEncrypt.encrypt_xor(PASSWORD, ENCRYPT_KEY),))
 		self.ctrl.exec_sql("insert into tbl_auth values ('0', '参照', 1)")
+		self.ctrl.exec_sql("create table tbl_account_token (id integer not null, token varchar(50) not null, expires_at date not null, revoked boolean, primary key(id, token), foreign key(id) references tbl_account(id))")
+		self.ctrl.exec_sql("insert into tbl_account_token values (0, 'old-token', '2026-10-21', 0)")
 
 	def test_migrate(self):
 		"""移行: mst_authの列名を変更し（値と外部キーの参照を保つ）、パスワード等の移行まで行う"""
@@ -151,6 +153,31 @@ class TestMigrateDataLegacySetupSql(TestCase):
 		self.assertEqual([r["auth_name"] for r in self.ctrl.select("tbl_auth")], ["参照権限"])
 		admin = self.ctrl.select("tbl_account")[0]
 		self.assertTrue(UtilEncrypt.verify_password(PASSWORD, admin["password"]))
+
+		# tbl_account_tokenは現在の定義（主キーid・text型）で作り直し、既存のセッションは破棄する
+		columns = {r["name"]: r for r in self.ctrl.exec_sql("pragma table_info(tbl_account_token)")}
+		self.assertEqual(set(n for n, r in columns.items() if r["pk"] > 0), {"id"})
+		self.assertEqual(columns["token"]["type"].lower(), "text")
+		self.assertEqual(columns["expires_at"]["type"].lower(), "text")
+		self.assertEqual(self.ctrl.select("tbl_account_token"), [])
+		bak = [r["name"] for r in self.ctrl.exec_sql(
+			"select name from sqlite_master where name like 'tbl_account_token_bak_%'")]
+		self.assertEqual(len(bak), 1)
+		self.assertEqual(self.ctrl.exec_sql("select token from {0}".format(bak[0])), [{"token": "old-token"}])
+		self.assertEqual(self.ctrl.exec_sql(
+			"select name from sqlite_master where name like 'tbl_account_token_%' and name not like '%_bak_%'"), [])
+		# 作り直したテーブルでログイン時のUPSERTが前のトークンを置き換える
+		self.ctrl.insert("tbl_account_token", [{"id": "0", "token": "t1", "expires_at": "x", "revoked": False}], True)
+		self.ctrl.insert("tbl_account_token", [{"id": "0", "token": "t2", "expires_at": "x", "revoked": False}], True)
+		self.assertEqual([r["token"] for r in self.ctrl.select("tbl_account_token")], ["t2"])
+
+	def test_migrate_current_token_table_is_kept(self):
+		"""現在の定義のtbl_account_tokenは作り直さず、既存のセッションを残す"""
+		self.ctrl.exec_sql("drop table tbl_account_token")
+		self.ctrl.create_table("tbl_account_token")
+		self.ctrl.insert("tbl_account_token", [{"id": "0", "token": "t1", "expires_at": "x", "revoked": False}])
+		MigrateData({"db_control": self.ctrl}, CTRL_DEFINE, ENCRYPT_KEY, lambda m: None).exec()
+		self.assertEqual([r["token"] for r in self.ctrl.select("tbl_account_token")], ["t1"])
 
 class FakeMysqlCtrl(ControlMysql):
 	"""information_schemaの問い合わせに決まった結果を返し、実行したSQLを記録するMySQL制御クラス"""
@@ -208,6 +235,8 @@ class TestMigrateDataTinyDB(TestCase):
 			{"id": 0, "auth_id": "ref", "auth_value": True},
 			{"id": 0, "auth_id": "up", "auth_value": False},
 		])
+		self.ctrl.db.table("tbl_account_token").insert(
+			{"id": 0, "token": "t1", "expires_at": "2099-01-01 00:00:00", "revoked": False})
 
 	def migrate(self):
 		return MigrateData({"db_control": self.ctrl}, CTRL_DEFINE, ENCRYPT_KEY, lambda m: None).exec()
@@ -222,6 +251,8 @@ class TestMigrateDataTinyDB(TestCase):
 		auth = self.ctrl.db.table("tbl_auth").all()
 		self.assertEqual(sorted(r["function"] for r in auth), ["参照", "更新"])
 		self.assertFalse(any("auth_id" in r for r in auth))
+		# トークンのアカウントIDは文字列にそろえる（JWTのsubで延長・無効化できるように）
+		self.assertEqual(self.ctrl.db.table("tbl_account_token").all()[0]["id"], "0")
 
 		hashed = admin["password"]
 		self.assertEqual(self.migrate(), [])

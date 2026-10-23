@@ -366,11 +366,32 @@ class BaseHandler(web.RequestHandler):
             トークン
         """
         self.ctrl_db["db_control"].insert("tbl_account_token", [{
-            "id": user_id,
+            "id": self.get_token_account_id(user_id),
             "token": token,
             "expires_at": self.get_token_expires_at(),
             "revoked": False
         }], True)
+
+    def get_token_account_id(self, user_id):
+        """
+        トークンのアカウントID（tbl_account_token.id）の値を返す。
+
+        発行（refresh_token）にはDBのアカウントID（数値）が、延長・無効化（check_login）には
+        JWTのsub（文字列）が渡される。TinyDBの条件は型まで一致する必要があり（0 と "0" は
+        一致しない）、そろえないと延長・無効化の対象の行が見つからないため、
+        テーブル定義（text型）に合わせて文字列にそろえる
+
+        Parameters
+        ----------
+        user_id : int or string
+            アカウントID
+
+        Returns
+        -------
+        string
+            アカウントID（文字列）
+        """
+        return str(user_id)
 
     def get_token_expires_at(self):
         """
@@ -409,7 +430,7 @@ class BaseHandler(web.RequestHandler):
         self.ctrl_db["db_control"].update("tbl_account_token", {
             "expires_at": self.get_token_expires_at()
         }, {
-            "id": user_id,
+            "id": self.get_token_account_id(user_id),
             "token": token,
             "revoked": False
         })
@@ -426,7 +447,7 @@ class BaseHandler(web.RequestHandler):
         self.ctrl_db["db_control"].update("tbl_account_token", {
             "revoked": True
         }, {
-            "id": user_id
+            "id": self.get_token_account_id(user_id)
         })
 
     def check_token_revoked(self, token):

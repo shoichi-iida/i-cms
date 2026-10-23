@@ -176,3 +176,28 @@ class TestProcAccess(TestCase):
 		self.assertEqual(len(handler.body), 1)
 		self.assertIn("CE-9999", handler.body[0])
 		self.assertEqual(events, ["begin", "rollback", "clear", "finish"])
+
+class TestTokenAccountId(TestCase):
+	"""トークンのアカウントIDの型（TinyDBは条件の型まで一致する必要がある）"""
+
+	def setUp(self):
+		from functions.define.base_define import BaseDefine
+		from functions.data.control_tinydb import ControlTinyDB
+		self.ctrl = ControlTinyDB(None)
+		for tbl in BaseDefine("define/tables/db_control.xml").dict.values():
+			self.ctrl.tables[tbl["id"]] = tbl
+		self.handler = ApiHandler.__new__(ApiHandler)
+		self.handler.ctrl_db = {"db_control": self.ctrl}
+
+	def token_row(self):
+		return self.ctrl.db.table("tbl_account_token").all()[0]
+
+	def test_extend_and_invalidate_with_jwt_subject(self):
+		"""発行時の数値のIDと、JWTのsub（文字列）のIDで、延長・無効化の対象の行が一致する"""
+		self.handler.refresh_token(0, "t1")
+		self.assertEqual(self.token_row()["id"], "0")
+		self.ctrl.db.table("tbl_account_token").update({"expires_at": "2000-01-01 00:00:00"})
+		self.handler.extend_token("0", "t1")
+		self.assertNotEqual(self.token_row()["expires_at"], "2000-01-01 00:00:00")
+		self.handler.invalidate_token("0")
+		self.assertTrue(self.token_row()["revoked"])

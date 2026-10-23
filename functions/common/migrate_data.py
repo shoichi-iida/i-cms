@@ -21,8 +21,10 @@ class MigrateData():
 	   MySQLでtbl_account.passwordが短い文字列型（旧setup.sqlのVARCHAR(30)）の場合は拡張
 	2. 旧setup.sqlのmst_authの列名の変更（auth_id → id、auth_name → name）と、
 	   tbl_authの権限キーの変換（旧: auth_id = mst_auth.id → 新: function = mst_auth.function）
-	3. tbl_accountの追加列の補完（is_password_set・login_failed_count・作成/更新日時等）
-	4. パスワードの移行（XOR暗号 → bcrypt-sha256）
+	3. 旧setup.sqlのtbl_account_token（token VARCHAR(50)・expires_at DATE・主キー(id, token)）の
+	   作り直し（既存のログインセッションは破棄する）。TinyDBはアカウントIDを文字列にそろえる
+	4. tbl_accountの追加列の補完（is_password_set・login_failed_count・作成/更新日時等）
+	5. パスワードの移行（XOR暗号 → bcrypt-sha256）
 
 	Notes
 	-----
@@ -84,6 +86,7 @@ class MigrateData():
 		# 権限キーの変換は、列の追加より先に行う（先に列を追加すると、旧定義のtbl_authへ
 		# function列だけが追加され、変換が必要かを判定できなくなるため）
 		self.migrate_auth(ctrl)
+		self.migrate_account_token(ctrl)
 		for db_id in self.ctrl_db.keys():
 			self.migrate_schema(self.ctrl_db[db_id])
 		# パスワードハッシュを格納できるよう、パスワードの移行より先に列を広げる
@@ -217,6 +220,64 @@ class MigrateData():
 			del ctrl.tables[work_id]
 		self.swap_table(ctrl, "tbl_auth", work_id)
 		self.log("tbl_authの権限キーを変換しました: {0}件".format(len(rows)))
+
+	def migrate_account_token(self, ctrl):
+		"""
+		tbl_account_tokenの移行処理
+
+		旧来のセットアップ（setup/setup.sql）はtbl_account_tokenを
+		(id INTEGER, token VARCHAR(50), expires_at DATE, revoked)・主キー(id, token)で作成していた。
+		列名は現在の定義と同じだが、JWTはVARCHAR(50)に収まらず、DATEでは無操作タイムアウトの
+		時刻を保持できない。主キーに(id, token)を含むため、ログイン時のUPSERT（refresh_token）で
+		アカウントの前のトークンを置き換えることもできない。
+		既存のトークンは上記のとおり有効なセッションとして使えないため、
+		現在の定義のテーブルへ作り直し、既存のログインセッションは破棄する
+		（利用者は再ログインが必要。破棄前の行はバックアップに残る）。
+
+		TinyDBは型の制約がないため作り直さないが、アカウントID（id）を数値で保存した行は、
+		延長・無効化（JWTのsubの文字列で照合する）の対象にならないため、文字列にそろえる。
+
+		Parameters
+		----------
+		ctrl : functions.data.control_base.ControlBase
+			DB制御クラス（db_control）
+		"""
+		if not "tbl_account_token" in ctrl.tables.keys():
+			return
+		if isinstance(ctrl, ControlTinyDB):
+			table = ctrl.db.table("tbl_account_token")
+			docs = [doc for doc in table.all() if "id" in doc and not isinstance(doc["id"], str)]
+			if len(docs) == 0:
+				return
+			self.backup(ctrl, "tbl_account_token")
+			for doc in docs:
+				table.update({"id": str(doc["id"])}, doc_ids=[doc.doc_id])
+			self.log("tbl_account_tokenのアカウントIDを文字列にそろえました: {0}件".format(len(docs)))
+			return
+
+		columns = self.get_column_info(ctrl, "tbl_account_token")
+		if len(columns) == 0:
+			return
+		keys = set(k["key"].lower() for k in ctrl.tables["tbl_account_token"].get("column", [])
+				   if "key" in k["role"] and not "join" in k["role"])
+		primary_keys = set(name for name, info in columns.items() if info["pk"])
+		if (primary_keys == keys
+				and columns.get("token", {}).get("type", "").startswith("text")
+				and columns.get("expires_at", {}).get("type", "") != "date"):
+			return
+		self.backup(ctrl, "tbl_account_token")
+		work_id = "tbl_account_token_mig_{0}".format(self.suffix)
+		ctrl.tables[work_id] = ctrl.tables["tbl_account_token"]
+		try:
+			try:
+				ctrl.create_table(work_id)
+			except Exception:
+				ctrl.exec_sql("drop table if exists {0}".format(work_id))
+				raise
+		finally:
+			del ctrl.tables[work_id]
+		self.swap_table(ctrl, "tbl_account_token", work_id)
+		self.log("tbl_account_tokenを作り直しました（既存のログインセッションは破棄しました。再ログインが必要です）")
 
 	def swap_table(self, ctrl, tbl_id, work_id):
 		"""
@@ -395,6 +456,34 @@ class MigrateData():
 				"select column_name as name from information_schema.columns"
 				" where table_schema = database() and table_name = %s", (tbl_id,))
 		return set(str(row["name"]).lower() for row in rows)
+
+	def get_column_info(self, ctrl, tbl_id):
+		"""
+		DBに存在する列の型・主キーの取得処理
+
+		Parameters
+		----------
+		ctrl : functions.data.control_base.ControlBase
+			DB制御クラス（SQLite・MySQL）
+		tbl_id : string
+			テーブルID
+
+		Returns
+		-------
+		dict
+			{列名（小文字）: {"type": 列型（小文字。例: "varchar(50)"）, "pk": 主キーか}}。
+			テーブルが存在しない場合は空
+		"""
+		if isinstance(ctrl, ControlSqlite):
+			rows = ctrl.exec_sql("pragma table_info({0})".format(tbl_id))
+			return {str(row["name"]).lower(): {"type": str(row["type"]).lower(), "pk": row["pk"] > 0}
+					for row in rows}
+		rows = ctrl.exec_sql(
+			"select column_name as name, column_type as type, column_key as column_key"
+			" from information_schema.columns"
+			" where table_schema = database() and table_name = %s", (tbl_id,))
+		return {str(row["name"]).lower(): {"type": str(row["type"]).lower(), "pk": row["column_key"] == "PRI"}
+				for row in rows}
 
 	def backup(self, ctrl, tbl_id):
 		"""
