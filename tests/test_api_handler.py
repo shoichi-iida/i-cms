@@ -201,3 +201,43 @@ class TestTokenAccountId(TestCase):
 		self.assertNotEqual(self.token_row()["expires_at"], "2000-01-01 00:00:00")
 		self.handler.invalidate_token("0")
 		self.assertTrue(self.token_row()["revoked"])
+
+class TestCheckLogin(TestCase):
+	"""ログイン確認（check_login）の一連の流れ（TinyDB。初期化と同じく数値のアカウントIDで保存する）"""
+
+	def setUp(self):
+		from tornado.options import define, options
+		from functions.define.base_define import BaseDefine
+		from functions.data.control_tinydb import ControlTinyDB
+		if "secrets_key" not in options:
+			define("secrets_key", default="12345678901234567890123456789012")
+		self.ctrl = ControlTinyDB(None)
+		for tbl in BaseDefine("define/tables/db_control.xml").dict.values():
+			self.ctrl.tables[tbl["id"]] = tbl
+		self.ctrl.insert("mst_auth", [{"id": "ref", "name": "参照権限", "function": "参照"}])
+		self.ctrl.insert("tbl_account", [{"id": 0, "user_id": "admin", "name": "管理者",
+										  "admin": True, "is_active": True}])
+		self.ctrl.insert("tbl_auth", [{"id": 0, "function": "参照", "auth_value": True}])
+		self.handler = ApiHandler.__new__(ApiHandler)
+		self.handler.ctrl_db = {"db_control": self.ctrl}
+		self.handler.prm_cmn = {}
+		# ログイン時と同じく、DBのアカウントID（数値）でトークンを発行する
+		self.token = self.handler.create_token(0)
+		self.handler.refresh_token(0, self.token)
+		self.handler.request = SimpleNamespace(headers={"Authorization": "Bearer " + self.token})
+
+	def test_check_login_with_numeric_account_id(self):
+		"""JWTのsub（文字列）でも、数値のIDで保存したアカウント・権限を取得でき、セッションは無効化されない"""
+		self.assertTrue(self.handler.check_login())
+		self.assertEqual(self.handler.prm_cmn["account_id"], 0)
+		self.assertEqual(self.handler.prm_cmn["account_data"]["user_id"], "admin")
+		self.assertEqual(self.handler.prm_cmn["account_auth"], ["参照"])
+		self.assertFalse(self.handler.check_token_revoked(self.token))
+		# 続くリクエストでも有効なまま
+		self.assertTrue(self.handler.check_login())
+
+	def test_check_login_rejects_inactive_account(self):
+		"""無効なアカウントのトークンは拒否し、無効化する"""
+		self.ctrl.update("tbl_account", {"is_active": False}, {"id": 0})
+		self.assertFalse(self.handler.check_login())
+		self.assertTrue(self.handler.check_token_revoked(self.token))

@@ -393,6 +393,28 @@ class BaseHandler(web.RequestHandler):
         """
         return str(user_id)
 
+    def get_account_id(self, user_id):
+        """
+        アカウントID（tbl_account.id）の値を返す。
+
+        tbl_account.idは整数のため、整数の文字列（JWTのsub等）は数値にする。
+        数値として解釈できない値はそのまま返す
+
+        Parameters
+        ----------
+        user_id : int or string
+            アカウントID
+
+        Returns
+        -------
+        int or string
+            アカウントID
+        """
+        try:
+            return int(user_id)
+        except (TypeError, ValueError):
+            return user_id
+
     def get_token_expires_at(self):
         """
         トークンの有効期限（tbl_account_token.expires_at）を返す。
@@ -736,6 +758,10 @@ class BaseHandler(web.RequestHandler):
                 return False
         except jwt.PyJWTError:
             return False
+        # JWTのsubは文字列のため、アカウント・権限の検索にはtbl_account.idの型（数値）へそろえる
+        # （TinyDBの条件は型まで一致する必要があり、"0" では 0 の行が見つからない）。
+        # トークンの延長・無効化は、内部でtbl_account_token.idの型（文字列）へそろえる
+        user_id = self.get_account_id(user_id)
 
         # トークンの有効期限を延長する。保存済みのトークンがこのトークンのままで、
         # 無効化されていない場合だけ延長し、上の無効状態の確認の後にコミットされた
