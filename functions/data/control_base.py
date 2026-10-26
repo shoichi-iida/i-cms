@@ -174,6 +174,25 @@ class ControlBase(metaclass=ABCMeta):
 			", ".join(col_text)
 		)
 
+	def escape_literal(self, text):
+		"""
+		SQL文へそのまま埋め込む断片（固定WHERE句）のエスケープ処理
+
+		プレースホルダの記法によって、断片に含まれる文字がプレースホルダとして
+		解釈される場合にエスケープする（MySQLの%。サブクラスで上書きする）。
+
+		Parameters
+		----------
+		text : string
+			SQL文の断片
+
+		Returns
+		-------
+		string
+			エスケープした断片
+		"""
+		return text
+
 	def get_column_type(self, key):
 		"""
 		列定義に対応するDBの列型の取得処理
@@ -297,7 +316,7 @@ class ControlBase(metaclass=ABCMeta):
 				sort_key_infos[key["key"]] = key
 		# 固定WHERE句は列条件の後ろへ追加する（バインド値を持たない）
 		for w in lst_where_text:
-			w.extend(fixed_where)
+			w.extend(self.escape_literal(f) for f in fixed_where)
 		result.append("select {0} from `{1}`".format(
 			", ".join(select_text),
 			tbl_id

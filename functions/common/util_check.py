@@ -31,6 +31,31 @@ class UtilCheck():
 		return False
 	
 	@staticmethod
+	def is_true(value):
+		"""
+		真偽値判定処理
+
+		DBの真偽値の列の値を判定する。SQLite・MySQLは0/1、TinyDBは保存した値
+		（True/False、"true"/"false"、"1"/"0"等）をそのまま返すため、SQL系のDBの保存時
+		（ControlBase.get_value）と同じく、"true" / "1" を真とする。
+
+		Parameters
+		----------
+		value : any
+			判定対象の値
+
+		Returns
+		-------
+		bool
+			True : 真　False : 偽（None・空文字・"0"・"false"等）
+		"""
+		if isinstance(value, bool):
+			return value
+		if value is None:
+			return False
+		return str(value).strip().lower() in ("true", "1")
+
+	@staticmethod
 	def is_decimal(value):
 		"""
 		数字チェック処理(アラビア数字)

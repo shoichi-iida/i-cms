@@ -3,6 +3,7 @@
 import bisect
 import re
 from datetime import date, datetime, timedelta, timezone
+from functions.common.util_check import UtilCheck
 
 
 class BaseApi():
@@ -41,9 +42,11 @@ class BaseApi():
     def is_admin_account(self, handler):
         """
         ログイン中アカウントが管理者（tbl_account.admin=True）かを返す。
-        SQLiteは0/1で返すためboolで評価する。
+        SQLiteは0/1で返し、TinyDBは保存した値（"0"・"false"等の文字列を含む）を
+        そのまま返すため、UtilCheck.is_trueで判定する（boolで評価すると空でない文字列は
+        すべて真になり、"0"・"false"でも管理者として扱ってしまう）。
         """
-        return bool(self.get_account_data(handler).get("admin"))
+        return UtilCheck.is_true(self.get_account_data(handler).get("admin"))
 
     def get_request_cache(self, handler):
         """

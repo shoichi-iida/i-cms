@@ -123,18 +123,19 @@ class ControlMysql(ControlBase):
 	def get_cursor(self):
 		return self.db.cursor()
 
-	def exec_sql(self, sql, param=()):
+	def exec_sql(self, sql, param=None):
 		if sql is None:
 			return []
 		with self.db.cursor() as cursor:
-			# バインド値がない場合はargsを渡さない。pymysqlはargsが指定された
-			# ときだけSQL文へ%書式を適用するため、値のないSQL（DDL等）に含まれる
-			# リテラルの%を壊さずに済む。値がある場合のSQLはget_*_sqlが生成した
-			# もので、プレースホルダ以外に%を含まない。
-			if param:
-				cursor.execute(sql, param)
-			else:
+			# バインド値を指定しない（None）場合はargsを渡さない。pymysqlはargsが
+			# 指定されたときだけSQL文へ%書式を適用するため、値のないSQL（DDL等）に
+			# 含まれるリテラルの%を壊さずに済む。
+			# get_*_sqlが生成したSQLは、バインド値が空でもargsを渡して%書式を適用する
+			# （固定WHERE句のリテラルの%はescape_literalで%%にしてあり、書式の適用で%に戻る）
+			if param is None:
 				cursor.execute(sql)
+			else:
+				cursor.execute(sql, param)
 			return cursor.fetchall()
 
 	def create_table(self, tbl_id):
@@ -255,6 +256,16 @@ class ControlMysql(ControlBase):
 			if key.get("key") == "id":
 				return key
 		return None
+
+	def escape_literal(self, text):
+		"""
+		SQL文へそのまま埋め込む断片（固定WHERE句）のエスケープ処理
+
+		pymysqlはバインド値を渡すとSQL文全体へ%書式を適用するため、断片に含まれる
+		リテラルの%（like 'A%'等）を%%にする（そのままでは書式の指定子として
+		解釈され、プレースホルダ（%s）と混在するとエラーになる）。
+		"""
+		return text.replace("%", "%%")
 
 	# 主キーに含める文字列列の型。MySQLはTEXT型の列を長さ指定なしで主キーにできないため、
 	# 可変長文字列にする（utf8mb4で255文字×4バイト＝1020バイト。3列の複合キーでも

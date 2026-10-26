@@ -18,6 +18,7 @@ from tornado.log import app_log
 from functions.common.initialize_data import InitializeData
 from functions.common.control_db import ControlDB
 from functions.common.util_encrypt import UtilEncrypt
+from functions.common.util_check import UtilCheck
 
 try:
     if options.ldap:
@@ -789,7 +790,9 @@ class BaseHandler(web.RequestHandler):
             "is_active": True
         })
         if len(data_account) > 0:
-            self.prm_cmn["admin"] = data_account[0]["admin"]
+            # メンテナンス中の利用可否等の判定に使うため、"0"・"false"等の文字列を
+            # 管理者として扱わないよう真偽値にそろえる（BaseApi.is_admin_accountと同じ判定）
+            self.prm_cmn["admin"] = UtilCheck.is_true(data_account[0]["admin"])
         else:
             # 無効なアカウントのトークンは無効化してから拒否する（DBを直接直して
             # 無効にした場合など、アカウントの削除を通さずに無効になったアカウントのトークンを

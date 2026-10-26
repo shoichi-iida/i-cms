@@ -203,6 +203,24 @@ class TestControlMysql(TestCase):
             self.assertEqual(sql, "delete from `tbl_account` where `id` = %s;")
             self.assertEqual(args, (expected,))
 
+    def test_select_escapes_literal_percent_in_fixed_where(self):
+        """固定WHERE句のリテラルの%は%%にエスケープし、プレースホルダ（%s）と混在しても%書式でエラーにならない"""
+        self.ctrl.select("tbl_update", {"id": "u1"}, fixed_where=["`tbl_update`.`update_text` like 'A%'"])
+        sql, args = self.last_call()
+        self.assertIn("like 'A%%'", sql)
+        self.assertEqual(args, (["u1"],))
+        # pymysqlと同じく%書式を適用すると、プレースホルダは値に、%%は%に戻る
+        formatted = sql % ("'u1'",)
+        self.assertIn("like 'A%'", formatted)
+        self.assertIn("= 'u1'", formatted)
+
+    def test_select_fixed_where_without_params_still_formats(self):
+        """バインド値がない場合も生成したSQLにはargsを渡し、エスケープした%%が%に戻るようにする"""
+        self.ctrl.select("tbl_update", fixed_where=["`tbl_update`.`update_text` like 'A%'"])
+        sql, args = self.last_call()
+        self.assertEqual(args, ([],))
+        self.assertIn("like 'A%'", sql % ())
+
     def test_exec_sql_without_params_omits_args(self):
         """バインド値がない場合はargsを渡さない（リテラルの%を壊さないため）"""
         self.ctrl.exec_sql("select '100%' as pct from tbl_account;")

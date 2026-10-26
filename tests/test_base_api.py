@@ -43,3 +43,25 @@ class TestResetLoginFailure(TestCase):
 		self.assertEqual(api.normalize_account_id(12), 12)
 		self.assertEqual(api.normalize_account_id("abc"), "abc")
 		self.assertIsNone(api.normalize_account_id(None))
+
+class TestIsAdminAccount(TestCase):
+	"""管理者判定（is_admin_account）。TinyDBは保存した文字列をそのまま返す"""
+
+	def is_admin(self, value):
+		handler = FakeHandler(None)
+		handler.prm_cmn = {"account_data": {"admin": value}}
+		return BaseApi().is_admin_account(handler)
+
+	def test_true_values(self):
+		for value in (True, 1, "1", "true", "True", " TRUE "):
+			self.assertTrue(self.is_admin(value), value)
+
+	def test_false_values(self):
+		"""空でない文字列でも"0"・"false"は管理者として扱わない"""
+		for value in (False, 0, "0", "false", "False", "", None, "no"):
+			self.assertFalse(self.is_admin(value), value)
+
+	def test_without_account_data(self):
+		handler = FakeHandler(None)
+		handler.prm_cmn = {}
+		self.assertFalse(BaseApi().is_admin_account(handler))
