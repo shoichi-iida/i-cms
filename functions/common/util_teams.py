@@ -3,7 +3,7 @@ from pymsteams import connectorcard
 
 class UtilTeams:
 	"""
-	Temas通知ユーティリティクラス
+	Teams通知ユーティリティクラス
 	"""
 	def __init__(self, url):
 		self.teams = connectorcard(url)
