@@ -236,6 +236,20 @@ class TestCheckLogin(TestCase):
 		# 続くリクエストでも有効なまま
 		self.assertTrue(self.handler.check_login())
 
+	def test_check_login_reads_settings_and_group_auth(self):
+		"""以前の版がJWTのsub（文字列）のIDで保存した設定、数値のIDで保存した所属も取得できる
+
+		アカウントIDは数値にそろえて検索するが、ControlTinyDBが条件を列定義の型
+		（tbl_account_settings.id・tbl_group_affiliation.account_idはtext）へそろえるため一致する。
+		"""
+		# 以前の版と同じく、型をそろえずにTinyDBへ直接保存した行
+		self.ctrl.db.table("tbl_account_settings").insert({"id": "0", "setting_key": "theme", "setting_value": "dark"})
+		self.ctrl.insert("tbl_group_affiliation", [{"group_id": "g1", "account_id": 0}])
+		self.ctrl.insert("tbl_group_auth", [{"id": "g1", "function": "更新", "auth_value": True}])
+		self.assertTrue(self.handler.check_login())
+		self.assertEqual(self.handler.prm_cmn["account_settings"], {"theme": "dark"})
+		self.assertEqual(sorted(self.handler.prm_cmn["account_auth"]), ["参照", "更新"])
+
 	def test_check_login_rejects_inactive_account(self):
 		"""無効なアカウントのトークンは拒否し、無効化する"""
 		self.ctrl.update("tbl_account", {"is_active": False}, {"id": 0})

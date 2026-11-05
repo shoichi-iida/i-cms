@@ -237,6 +237,8 @@ class TestMigrateDataTinyDB(TestCase):
 		])
 		self.ctrl.db.table("tbl_account_token").insert(
 			{"id": 0, "token": "t1", "expires_at": "2099-01-01 00:00:00", "revoked": False})
+		# 以前の初期化がtext型の列へ数値のアカウントIDで保存した行
+		self.ctrl.db.table("tbl_group_affiliation").insert({"group_id": "g1", "account_id": 0})
 
 	def migrate(self):
 		return MigrateData({"db_control": self.ctrl}, CTRL_DEFINE, ENCRYPT_KEY, lambda m: None).exec()
@@ -253,6 +255,9 @@ class TestMigrateDataTinyDB(TestCase):
 		self.assertFalse(any("auth_id" in r for r in auth))
 		# トークンのアカウントIDは文字列にそろえる（JWTのsubで延長・無効化できるように）
 		self.assertEqual(self.ctrl.db.table("tbl_account_token").all()[0]["id"], "0")
+		# 保存済みの値を列定義の型にそろえる（text列の数値を文字列へ）
+		self.assertEqual(self.ctrl.db.table("tbl_group_affiliation").all()[0]["account_id"], "0")
+		self.assertEqual(len(self.ctrl.select("tbl_group_affiliation", {"account_id": 0})), 1)
 
 		hashed = admin["password"]
 		self.assertEqual(self.migrate(), [])

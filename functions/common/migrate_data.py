@@ -22,7 +22,8 @@ class MigrateData():
 	2. 旧setup.sqlのmst_authの列名の変更（auth_id → id、auth_name → name）と、
 	   tbl_authの権限キーの変換（旧: auth_id = mst_auth.id → 新: function = mst_auth.function）
 	3. 旧setup.sqlのtbl_account_token（token VARCHAR(50)・expires_at DATE・主キー(id, token)）の
-	   作り直し（既存のログインセッションは破棄する）。TinyDBはアカウントIDを文字列にそろえる
+	   作り直し（既存のログインセッションは破棄する）。TinyDBは保存済みの値を列定義の型にそろえる
+	   （ControlTinyDB.normalize_record。例: tbl_account_token.id・tbl_group_affiliation.account_idの数値を文字列へ）
 	4. tbl_accountの追加列の補完（is_password_set・login_failed_count・作成/更新日時等）
 	5. パスワードの移行（XOR暗号 → bcrypt-sha256）
 
@@ -98,6 +99,7 @@ class MigrateData():
 		列の追加処理
 
 		定義にあり、DBに存在しないテーブル・列を追加する。既存の列の変更・削除は行わない。
+		TinyDBは列の追加が不要なため、保存済みの値を列定義の型にそろえる（normalize_tinydb）。
 
 		Parameters
 		----------
@@ -105,6 +107,7 @@ class MigrateData():
 			DB制御クラス
 		"""
 		if isinstance(ctrl, ControlTinyDB):
+			self.normalize_tinydb(ctrl)
 			return
 		for tbl_id, def_tbl in ctrl.tables.items():
 			columns = self.get_columns(ctrl, tbl_id)
@@ -155,6 +158,33 @@ class MigrateData():
 		for old, new in renames:
 			ctrl.exec_sql("alter table mst_auth rename column {0} to {1}".format(old, new))
 			self.log("列名を変更しました: mst_auth.{0} → {1}".format(old, new))
+
+	def normalize_tinydb(self, ctrl):
+		"""
+		TinyDBの保存済みの値を列定義の型へそろえる処理
+
+		ControlTinyDBは書き込む値と条件の値を列定義の型へそろえる（normalize_record）ため、
+		それより前に別の型で保存した値（例: 初期化がtext型のtbl_group_affiliation.account_idへ
+		数値で保存したアカウントID）は条件に一致しなくなる。同じ規則で保存済みの値もそろえる。
+
+		Parameters
+		----------
+		ctrl : functions.data.control_tinydb.ControlTinyDB
+			DB制御クラス
+		"""
+		for tbl_id in ctrl.tables.keys():
+			table = ctrl.db.table(tbl_id)
+			changed = []
+			for doc in table.all():
+				normalized = ctrl.normalize_record(tbl_id, dict(doc))
+				if normalized != dict(doc):
+					changed.append((doc.doc_id, normalized))
+			if len(changed) == 0:
+				continue
+			self.backup(ctrl, tbl_id)
+			for doc_id, normalized in changed:
+				table.update(normalized, doc_ids=[doc_id])
+			self.log("値を列定義の型にそろえました: {0}（{1}件）".format(tbl_id, len(changed)))
 
 	def migrate_auth(self, ctrl):
 		"""
@@ -234,8 +264,8 @@ class MigrateData():
 		現在の定義のテーブルへ作り直し、既存のログインセッションは破棄する
 		（利用者は再ログインが必要。破棄前の行はバックアップに残る）。
 
-		TinyDBは型の制約がないため作り直さないが、アカウントID（id）を数値で保存した行は、
-		延長・無効化（JWTのsubの文字列で照合する）の対象にならないため、文字列にそろえる。
+		TinyDBは型の制約がないため作り直さない（アカウントIDを数値で保存した行は、
+		migrate_schemaで列定義の型（文字列）にそろえる）。
 
 		Parameters
 		----------
@@ -245,14 +275,6 @@ class MigrateData():
 		if not "tbl_account_token" in ctrl.tables.keys():
 			return
 		if isinstance(ctrl, ControlTinyDB):
-			table = ctrl.db.table("tbl_account_token")
-			docs = [doc for doc in table.all() if "id" in doc and not isinstance(doc["id"], str)]
-			if len(docs) == 0:
-				return
-			self.backup(ctrl, "tbl_account_token")
-			for doc in docs:
-				table.update({"id": str(doc["id"])}, doc_ids=[doc.doc_id])
-			self.log("tbl_account_tokenのアカウントIDを文字列にそろえました: {0}件".format(len(docs)))
 			return
 
 		columns = self.get_column_info(ctrl, "tbl_account_token")

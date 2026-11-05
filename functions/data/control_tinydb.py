@@ -117,7 +117,7 @@ class ControlTinyDB(ControlBase):
 						c = (q[k].matches(f"{v[1:]}$"))
 				else:
 					k = key["key"]
-					v = dict_select[k]
+					v = self.normalize_value(key, dict_select[k])
 					if isinstance(v, list):
 						# リスト指定はIN条件として扱う（SQLite・MySQL実装に合わせる）。
 						# 値の一致比較のままでは常に0件になり、複数IDでの絞り込みを
@@ -185,6 +185,7 @@ class ControlTinyDB(ControlBase):
 			return
 		
 		table = self.db.table(tbl_id)
+		lst_insert = [self.normalize_record(tbl_id, record) for record in lst_insert]
 		if is_upsert:
 			def_tbl = self.tables[tbl_id]
 			keys = [col["key"] for col in def_tbl.get("column", []) if "key" in col.get("role", "")]
@@ -225,9 +226,10 @@ class ControlTinyDB(ControlBase):
 			return
 		
 		table = self.db.table(tbl_id)
+		dict_update = self.normalize_record(tbl_id, dict_update)
 		q = Query()
 		cond = None
-		for k, v in dict_where.items():
+		for k, v in self.normalize_record(tbl_id, dict_where).items():
 			if cond is None:
 				cond = (q[k] == v)
 			else:
@@ -261,7 +263,7 @@ class ControlTinyDB(ControlBase):
 		table = self.db.table(tbl_id)
 		q = Query()
 		cond = None
-		for k, v in dict_where.items():
+		for k, v in self.normalize_record(tbl_id, dict_where).items():
 			if cond is None:
 				cond = (q[k] == v)
 			else:
@@ -299,13 +301,77 @@ class ControlTinyDB(ControlBase):
 			q = Query()
 			for record in lst_delete:
 				cond = None
-				for k, v in record.items():
+				for k, v in self.normalize_record(tbl_id, record).items():
 					if cond is None:
 						cond = (q[k] == v)
 					else:
 						cond &= (q[k] == v)
 				if cond:
 					table.remove(cond)
+
+	def normalize_value(self, key, val):
+		"""
+		値を列定義の型へそろえる処理
+
+		TinyDBは保存した値をそのまま保持し、条件は型まで一致する必要がある（0 と "0" は
+		一致しない）。SQL系のDBは列の型へ変換して保存・比較するため、同じ結果になるよう、
+		書き込む値と条件の値を列定義の型へそろえる
+		（int: 整数の文字列を整数へ、text: 数値を文字列へ、bool: ControlBase.normalize_bool）。
+		リストは要素ごとにそろえる。変換できない値・None・その他の型はそのまま返す。
+
+		Parameters
+		----------
+		key : dict
+			列定義（テーブル定義XMLのcolumn）
+		val : any
+			値
+
+		Returns
+		-------
+		any
+			列定義の型へそろえた値
+		"""
+		if isinstance(val, list):
+			return [self.normalize_value(key, v) for v in val]
+		if val is None:
+			return None
+		col_type = key.get("type")
+		if col_type == "bool":
+			return self.normalize_bool(key, val)
+		if col_type == "int" and isinstance(val, str):
+			try:
+				return int(val.strip())
+			except ValueError:
+				return val
+		if col_type == "text" and isinstance(val, (int, float)) and not isinstance(val, bool):
+			return str(val)
+		return val
+
+	def normalize_record(self, tbl_id, record):
+		"""
+		レコード（書き込む値・条件）の各値を列定義の型へそろえる処理
+
+		テーブル定義にない列（join列・like列を含む）の値はそのまま返す。
+
+		Parameters
+		----------
+		tbl_id : string
+			テーブルID
+		record : dict
+			レコード
+
+		Returns
+		-------
+		dict
+			列定義の型へそろえたレコード（新しいdict）
+		"""
+		columns = {}
+		for key in self.tables.get(tbl_id, {}).get("column", []):
+			if key.get("key", "") == "" or "join" in key["role"] or "like" in key["role"]:
+				continue
+			columns[key["key"]] = key
+		return {k: self.normalize_value(columns[k], v) if k in columns else v
+				for k, v in record.items()}
 
 	def drop_tables(self):
 		"""
