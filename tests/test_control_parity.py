@@ -18,8 +18,12 @@ from functions.data.control_tinydb import ControlTinyDB
 
 ROWS = [
 	{"id": "a", "function": "apple", "value": True},
-	{"id": "b", "function": "banana", "value": False},
+	{"id": "b", "function": "Banana", "value": False},
 	{"id": "c", "function": "cherry", "value": None},
+	# 値がない（NULL）行
+	{"id": "d", "function": None, "value": True},
+	# ASCII以外の英字（SQLiteのLIKEは大文字・小文字を区別する）
+	{"id": "e", "function": "äpfel", "value": False},
 ]
 
 # 検証する条件（列 → 条件の値）
@@ -31,7 +35,16 @@ CONDITIONS = [
 	{"id": {"value": "a", "operator": "!="}},
 	{"id": {"value": "b", "operator": ">="}},
 	{"function": {"value": "b%", "operator": "like"}},
-	{"function": {"value": "%rr%", "operator": "like"}},
+	{"function": {"value": "%RR%", "operator": "like"}},
+	{"function": {"value": "ÄPF%", "operator": "like"}},
+	{"function": {"value": "äPF%", "operator": "like"}},
+	{"function": {"value": "%", "operator": "like"}},
+	# NULLを含む列・リストの IN・NOT IN（SQLのNULLの扱い）
+	{"function": ["apple", "cherry"]},
+	{"function": ["apple", None]},
+	{"function": {"value": ["apple"], "operator": "not"}},
+	{"function": {"value": ["apple", None], "operator": "not"}},
+	{"value": {"value": ["true"], "operator": "not"}},
 	{"value": None},
 	{"value": "false"},
 	{"id": ["a", "b"], "value": True},

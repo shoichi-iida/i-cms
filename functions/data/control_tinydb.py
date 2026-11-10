@@ -402,22 +402,51 @@ class ControlTinyDB(ControlBase):
 				lower, upper = val[0], val[1]
 				return field.test(lambda x: self.compare(operator.ge, x, lower)
 								  and self.compare(operator.le, x, upper))
+			# SQLのNULLの扱いに合わせる。値がない（NULL・キーなし）行は IN・NOT IN のどちらにも
+			# 一致しない（NULLとの比較はNULLになる）。リストにNULLを含む NOT IN は、どの行にも
+			# 一致しない（x <> NULL がNULLになるため）。IN のリストのNULLは一致に寄与しない
+			values = [v for v in val if v is not None]
 			if op == "not":
-				return ~field.one_of(val)
+				if len(values) != len(val):
+					return field.test(lambda x: False)
+				return field.test(lambda x: x is not None and not x in values)
 			# リスト指定はIN条件として扱う。対象をlistに限るのはControlBase.__append_conditionと
 			# 揃えるため（tuple・setはどの実装でもIN展開しない）
-			return field.one_of(val)
+			return field.test(lambda x: x is not None and x in values)
 		if op == "like":
-			# LIKEのワイルドカード（%・_）を正規表現へ変換し、値全体と照合する
+			# LIKEのワイルドカード（%・_）を正規表現へ変換し、値全体と照合する。
+			# SQLiteのLIKEと同じく、ASCIIの英字だけ大文字・小文字を区別しない
+			# （ASCII以外の文字は区別する）
 			pattern = "".join(".*" if ch == "%" else "." if ch == "_" else re.escape(ch)
-							  for ch in str(val))
-			return field.test(lambda x: isinstance(x, str) and re.fullmatch(pattern, x, re.S) is not None)
+							  for ch in self.ascii_lower(str(val)))
+			return field.test(lambda x: self.like_text(x) is not None
+							  and re.fullmatch(pattern, self.ascii_lower(self.like_text(x)), re.S) is not None)
 		if not op in self.COMPARE_OPERATORS:
 			raise ValueError("TinyDBでは未対応の演算子です: {0}".format(op))
 		func = self.COMPARE_OPERATORS[op]
 		if func is operator.eq:
 			return field == val
 		return field.test(lambda x: self.compare(func, x, val))
+
+	# ASCIIの英大文字 → 小文字の変換表（LIKEの照合用。str.lowerはASCII以外も変換するため使わない）
+	ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
+
+	def ascii_lower(self, text):
+		"""ASCIIの英大文字だけを小文字にする処理（SQLiteのLIKEと同じ大文字・小文字の扱い）"""
+		return text.translate(self.ASCII_LOWER)
+
+	def like_text(self, x):
+		"""
+		LIKEで照合する文字列の取得処理
+
+		SQLと同じく数値は文字列にして照合する（真偽値はSQLiteの保存値と同じく"1"/"0"）。
+		値がない（None）場合はNone（どのパターンにも一致しない）
+		"""
+		if x is None:
+			return None
+		if isinstance(x, bool):
+			return "1" if x else "0"
+		return str(x)
 
 	def compare(self, func, x, val):
 		"""
