@@ -694,13 +694,24 @@ class ControlBase(metaclass=ABCMeta):
 			k = key["get_key"]
 		# bool列の条件は保存時（get_value）と同じく真偽値へ正規化する。値の埋め込み時は
 		# SQLのtrue/falseリテラルとして比較していたため、文字列のままバインドすると
-		# "false"等の条件が一致しなくなる（演算子指定・リストの値も同様）
+		# "false"等の条件が一致しなくなる（演算子指定・リストの値も同様）。
+		# LIKEの値は列の値ではなく文字列のパターンのため正規化しない（"1%"を偽へ
+		# 変換すると、パターンとして照合されなくなる）
 		if isinstance(val, dict):
-			self.__append_condition(lst_text, lst_params, tbl_name, k,
-				self.normalize_where_value(key, val.get("value")), val.get("operator", "="))
+			operator = val.get("operator", "=")
+			value = val.get("value")
+			if not self.is_like_operator(operator):
+				value = self.normalize_where_value(key, value)
+			self.__append_condition(lst_text, lst_params, tbl_name, k, value, operator)
 		else:
 			self.__append_condition(lst_text, lst_params, tbl_name, k,
 				self.normalize_where_value(key, val))
+
+	def is_like_operator(self, operator):
+		"""
+		演算子がLIKEか（条件の値が文字列のパターンか）の判定処理
+		"""
+		return str(operator).strip().lower() == "like"
 
 	def normalize_where_value(self, key, val):
 		"""

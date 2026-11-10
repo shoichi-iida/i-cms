@@ -473,8 +473,12 @@ class ControlTinyDB(ControlBase):
 	def normalize_where_value(self, key, val):
 		"""
 		条件の値を列定義の型へそろえる処理（演算子指定の場合はその値をそろえる）
+
+		LIKEの値は列の値ではなく文字列のパターンのため、そろえない（ControlBaseと同じ）
 		"""
 		if isinstance(val, dict):
+			if self.is_like_operator(val.get("operator", "=")):
+				return val
 			result = dict(val)
 			result["value"] = self.normalize_value(key, val.get("value"))
 			return result

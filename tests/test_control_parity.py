@@ -45,6 +45,11 @@ CONDITIONS = [
 	{"function": {"value": ["apple"], "operator": "not"}},
 	{"function": {"value": ["apple", None], "operator": "not"}},
 	{"value": {"value": ["true"], "operator": "not"}},
+	# bool列へのLIKE（パターンは真偽値へ変換せず、保存値の"1"/"0"と照合する）
+	{"value": {"value": "1%", "operator": "like"}},
+	{"value": {"value": "0", "operator": "like"}},
+	{"value": {"value": "%", "operator": "like"}},
+	{"value": {"value": "true", "operator": "like"}},
 	{"value": None},
 	{"value": "false"},
 	{"id": ["a", "b"], "value": True},
