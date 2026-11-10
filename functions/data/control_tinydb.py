@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+import operator
+import re
 from tinydb import TinyDB, Query
 from tinydb.storages import MemoryStorage
 from functions.data.control_base import ControlBase
@@ -117,16 +119,7 @@ class ControlTinyDB(ControlBase):
 						c = (q[k].matches(f"{v[1:]}$"))
 				else:
 					k = key["key"]
-					v = self.normalize_value(key, dict_select[k])
-					if isinstance(v, list):
-						# リスト指定はIN条件として扱う（SQLite・MySQL実装に合わせる）。
-						# 値の一致比較のままでは常に0件になり、複数IDでの絞り込みを
-						# 行うAPIが結果を返さない。
-						# 対象をlistに限るのはControlBase.__append_conditionと
-						# 揃えるため（tuple・setはどの実装でもIN展開しない）
-						c = (q[k].one_of(v))
-					else:
-						c = (q[k] == v)
+					c = self.get_column_condition(q[k], self.normalize_where_value(key, dict_select[k]))
 				if cond is None:
 					cond = c
 				else:
@@ -227,13 +220,7 @@ class ControlTinyDB(ControlBase):
 		
 		table = self.db.table(tbl_id)
 		dict_update = self.normalize_record(tbl_id, dict_update)
-		q = Query()
-		cond = None
-		for k, v in self.normalize_record(tbl_id, dict_where).items():
-			if cond is None:
-				cond = (q[k] == v)
-			else:
-				cond &= (q[k] == v)
+		cond = self.get_condition(tbl_id, dict_where)
 		
 		if cond:
 			table.update(dict_update, cond)
@@ -261,13 +248,7 @@ class ControlTinyDB(ControlBase):
 			return
 
 		table = self.db.table(tbl_id)
-		q = Query()
-		cond = None
-		for k, v in self.normalize_record(tbl_id, dict_where).items():
-			if cond is None:
-				cond = (q[k] == v)
-			else:
-				cond &= (q[k] == v)
+		cond = self.get_condition(tbl_id, dict_where)
 
 		def add_values(doc):
 			for k, v in dict_increment.items():
@@ -298,14 +279,8 @@ class ControlTinyDB(ControlBase):
 		if not lst_delete:
 			table.truncate()
 		else:
-			q = Query()
 			for record in lst_delete:
-				cond = None
-				for k, v in self.normalize_record(tbl_id, record).items():
-					if cond is None:
-						cond = (q[k] == v)
-					else:
-						cond &= (q[k] == v)
+				cond = self.get_condition(tbl_id, record)
 				if cond:
 					table.remove(cond)
 
@@ -347,6 +322,135 @@ class ControlTinyDB(ControlBase):
 			return str(val)
 		return val
 
+	# 比較演算子 → 比較関数（ControlBase.__append_conditionがSQLへ展開する演算子と同じ）
+	COMPARE_OPERATORS = {
+		"=": operator.eq,
+		"!=": operator.ne,
+		"<>": operator.ne,
+		"<": operator.lt,
+		"<=": operator.le,
+		">": operator.gt,
+		">=": operator.ge,
+	}
+
+	def get_condition(self, tbl_id, dict_where):
+		"""
+		条件辞書からTinyDBの検索条件を組み立てる処理（更新・加算・削除）
+
+		各値は列定義の型へそろえ（normalize_where_value）、get_column_conditionで
+		SQL実装（ControlBase.__append_condition）と同じく解釈する。
+
+		Parameters
+		----------
+		tbl_id : string
+			テーブルID
+		dict_where : dict
+			条件辞書
+
+		Returns
+		-------
+		tinydb.queries.QueryInstance or None
+			検索条件。条件がない場合はNone
+		"""
+		columns = self.get_column_defs(tbl_id)
+		q = Query()
+		cond = None
+		for k, v in dict_where.items():
+			if k in columns:
+				v = self.normalize_where_value(columns[k], v)
+			c = self.get_column_condition(q[k], v)
+			cond = c if cond is None else (cond & c)
+		return cond
+
+	def get_column_condition(self, field, val):
+		"""
+		1列の条件をTinyDBの検索条件にする処理
+
+		SQL実装（ControlBase.__append_condition）と同じく解釈する。
+		- None: 値がない（is null。キー自体がない行を含む）
+		- list: IN（operator="not"ならNOT IN、"between"なら先頭2要素の範囲）
+		- {"value": 値, "operator": 演算子}: 演算子で比較（=・!=・<>・<・<=・>・>=・like）
+		- それ以外: 一致
+		値の一致比較だけでは、リスト・演算子指定の条件が常に不一致となり、SQL実装では
+		対象になる行を黙って更新・削除・加算しないため、すべての操作でこの解釈を使う。
+
+		Parameters
+		----------
+		field : tinydb.queries.Query
+			対象列（Query()[列名]）
+		val : any
+			条件の値
+
+		Returns
+		-------
+		tinydb.queries.QueryInstance
+			検索条件
+
+		Raises
+		------
+		ValueError
+			未対応の演算子の場合（黙って不一致にしない）
+		"""
+		op = "="
+		if isinstance(val, dict):
+			op = str(val.get("operator", "=")).strip().lower()
+			val = val.get("value")
+		if val is None:
+			return (~field.exists()) | (field == None)
+		if isinstance(val, list):
+			if op == "between":
+				lower, upper = val[0], val[1]
+				return field.test(lambda x: self.compare(operator.ge, x, lower)
+								  and self.compare(operator.le, x, upper))
+			if op == "not":
+				return ~field.one_of(val)
+			# リスト指定はIN条件として扱う。対象をlistに限るのはControlBase.__append_conditionと
+			# 揃えるため（tuple・setはどの実装でもIN展開しない）
+			return field.one_of(val)
+		if op == "like":
+			# LIKEのワイルドカード（%・_）を正規表現へ変換し、値全体と照合する
+			pattern = "".join(".*" if ch == "%" else "." if ch == "_" else re.escape(ch)
+							  for ch in str(val))
+			return field.test(lambda x: isinstance(x, str) and re.fullmatch(pattern, x, re.S) is not None)
+		if not op in self.COMPARE_OPERATORS:
+			raise ValueError("TinyDBでは未対応の演算子です: {0}".format(op))
+		func = self.COMPARE_OPERATORS[op]
+		if func is operator.eq:
+			return field == val
+		return field.test(lambda x: self.compare(func, x, val))
+
+	def compare(self, func, x, val):
+		"""
+		比較処理（値がない・型が比較できない場合は不一致とする。SQLのNULLとの比較と同じ）
+		"""
+		if x is None:
+			return False
+		try:
+			return func(x, val)
+		except TypeError:
+			return False
+
+	def get_column_defs(self, tbl_id):
+		"""
+		テーブル定義の列（join列・like列を除く）を列名で引ける辞書の取得処理
+		"""
+		columns = {}
+		for key in self.tables.get(tbl_id, {}).get("column", []):
+			if key.get("key", "") == "" or "join" in key["role"] or "like" in key["role"]:
+				continue
+			columns[key["key"]] = key
+		return columns
+
+	def normalize_where_value(self, key, val):
+		"""
+		条件の値を列定義の型へそろえる処理（演算子指定の場合はその値をそろえる）
+		"""
+		if isinstance(val, dict):
+			result = dict(val)
+			result["value"] = self.normalize_value(key, val.get("value"))
+			return result
+		return self.normalize_value(key, val)
+
 	def normalize_record(self, tbl_id, record):
 		"""
 		レコード（書き込む値・条件）の各値を列定義の型へそろえる処理
@@ -365,11 +469,7 @@ class ControlTinyDB(ControlBase):
 		dict
 			列定義の型へそろえたレコード（新しいdict）
 		"""
-		columns = {}
-		for key in self.tables.get(tbl_id, {}).get("column", []):
-			if key.get("key", "") == "" or "join" in key["role"] or "like" in key["role"]:
-				continue
-			columns[key["key"]] = key
+		columns = self.get_column_defs(tbl_id)
 		return {k: self.normalize_value(columns[k], v) if k in columns else v
 				for k, v in record.items()}
 
