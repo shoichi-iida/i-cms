@@ -50,6 +50,16 @@ CONDITIONS = [
 	{"value": {"value": "0", "operator": "like"}},
 	{"value": {"value": "%", "operator": "like"}},
 	{"value": {"value": "true", "operator": "like"}},
+	# 空のリストの IN・NOT IN（NOT IN は値がない行も含めてすべての行に一致する）
+	{"function": []},
+	{"function": {"value": [], "operator": "not"}},
+	# LIKEのワイルドカードの組み合わせ
+	{"function": {"value": "_pple", "operator": "like"}},
+	{"function": {"value": "%a%a%", "operator": "like"}},
+	{"function": {"value": "%e", "operator": "like"}},
+	{"function": {"value": "%%n%_", "operator": "like"}},
+	{"function": {"value": "apple_", "operator": "like"}},
+	{"function": {"value": "", "operator": "like"}},
 	{"value": None},
 	{"value": "false"},
 	{"id": ["a", "b"], "value": True},
@@ -109,3 +119,27 @@ class TestConditionParity(TestCase):
 		"""未対応の演算子は黙って不一致にせず、例外にする"""
 		with self.assertRaises(ValueError):
 			self.ctrls["tinydb"].update("tbl_auth", {"function": "x"}, {"id": {"value": "a", "operator": "regexp"}})
+
+class TestLikeMatch(TestCase):
+	"""LIKEの照合（ControlTinyDB.like_match）"""
+
+	def setUp(self):
+		self.ctrl = ControlTinyDB(None)
+
+	def test_matches_like_sqlite(self):
+		"""SQLiteのLIKEと同じ結果になる（%・_の組み合わせ、空文字）"""
+		import sqlite3
+		db = sqlite3.connect(":memory:")
+		texts = ["", "a", "ab", "abc", "aXbXc", "%", "_", "a%b", "banana"]
+		patterns = ["", "%", "_", "a%", "%c", "a_c", "%b%", "a%b%c", "__", "%%", "%_%", "b%n%a", "%an%an%"]
+		for text in texts:
+			for pattern in patterns:
+				expected = db.execute("select ? like ?", (text, pattern)).fetchone()[0] == 1
+				self.assertEqual(self.ctrl.like_match(pattern, text), expected, (pattern, text))
+
+	def test_many_wildcards_finish_quickly(self):
+		"""%を多く含むパターンでもバックトラッキングが爆発しない（正規表現では数分以上かかる規模）"""
+		import time
+		start = time.time()
+		self.assertFalse(self.ctrl.like_match("%a" * 200 + "%b", "a" * 2000))
+		self.assertLess(time.time() - start, 5)

@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
 import operator
-import re
 from tinydb import TinyDB, Query
 from tinydb.storages import MemoryStorage
 from functions.data.control_base import ControlBase
@@ -407,6 +406,9 @@ class ControlTinyDB(ControlBase):
 			# 一致しない（x <> NULL がNULLになるため）。IN のリストのNULLは一致に寄与しない
 			values = [v for v in val if v is not None]
 			if op == "not":
+				if len(val) == 0:
+					# 空のリストの NOT IN は、SQLiteと同じく値がない行も含めてすべての行に一致する
+					return Query().noop()
 				if len(values) != len(val):
 					return field.test(lambda x: False)
 				return field.test(lambda x: x is not None and not x in values)
@@ -414,13 +416,11 @@ class ControlTinyDB(ControlBase):
 			# 揃えるため（tuple・setはどの実装でもIN展開しない）
 			return field.test(lambda x: x is not None and x in values)
 		if op == "like":
-			# LIKEのワイルドカード（%・_）を正規表現へ変換し、値全体と照合する。
 			# SQLiteのLIKEと同じく、ASCIIの英字だけ大文字・小文字を区別しない
 			# （ASCII以外の文字は区別する）
-			pattern = "".join(".*" if ch == "%" else "." if ch == "_" else re.escape(ch)
-							  for ch in self.ascii_lower(str(val)))
+			pattern = self.ascii_lower(str(val))
 			return field.test(lambda x: self.like_text(x) is not None
-							  and re.fullmatch(pattern, self.ascii_lower(self.like_text(x)), re.S) is not None)
+							  and self.like_match(pattern, self.ascii_lower(self.like_text(x))))
 		if not op in self.COMPARE_OPERATORS:
 			raise ValueError("TinyDBでは未対応の演算子です: {0}".format(op))
 		func = self.COMPARE_OPERATORS[op]
@@ -434,6 +434,48 @@ class ControlTinyDB(ControlBase):
 	def ascii_lower(self, text):
 		"""ASCIIの英大文字だけを小文字にする処理（SQLiteのLIKEと同じ大文字・小文字の扱い）"""
 		return text.translate(self.ASCII_LOWER)
+
+	def like_match(self, pattern, text):
+		"""
+		LIKEのパターン（%: 0文字以上、_: 任意の1文字）が文字列全体に一致するかの判定処理
+
+		正規表現（%を.*へ変換）で照合すると、%を多く含むパターンでバックトラッキングが
+		指数的に増え、リクエストを処理するワーカーが止まる。最後に通った%の位置だけを
+		覚えて戻る方式で照合し、処理量をパターン長×文字列長以内に抑える。
+
+		Parameters
+		----------
+		pattern : string
+			LIKEのパターン
+		text : string
+			照合する文字列
+
+		Returns
+		-------
+		bool
+			一致する場合True
+		"""
+		p = t = 0
+		star = -1
+		mark = 0
+		while t < len(text):
+			if p < len(pattern) and pattern[p] == "%":
+				# %の直後から照合を続け、合わなければ%が1文字多く吸収したものとして戻る
+				star = p
+				mark = t
+				p += 1
+			elif p < len(pattern) and (pattern[p] == "_" or pattern[p] == text[t]):
+				p += 1
+				t += 1
+			elif star != -1:
+				p = star + 1
+				mark += 1
+				t = mark
+			else:
+				return False
+		while p < len(pattern) and pattern[p] == "%":
+			p += 1
+		return p == len(pattern)
 
 	def like_text(self, x):
 		"""
